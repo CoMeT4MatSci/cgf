@@ -1,6 +1,7 @@
 import numpy as np
 
 from ase import Atoms
+from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
 from .cycles import find_cycles, cycle_graph
@@ -185,3 +186,66 @@ def _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=None):
 
     return bond_desc
 
+
+# CALCULATOR
+
+class MikadoRR(Calculator):
+    """FF based on the Mikado Model and Ridge Regression.
+
+    """
+
+    implemented_properties = ['energy']
+    default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
+                          'rr_incpt': 0.0,
+                          'r0': 1.0}
+    nolabel = True
+
+    def __init__(self, **kwargs):
+        """
+        Parameters
+        ----------
+        rr_coeff: array of floats
+            RR coefficients
+        rr_incpt: float
+            intercept of RR model [Energy]
+        r0: float
+            equilibrium distance in units of [length]
+        """
+        Calculator.__init__(self, **kwargs)
+
+        self.nl = None
+
+    def calculate(self, atoms=None, properties=implemented_properties,
+                  system_changes=['positions', 'numbers', 'cell',
+                                  'pbc']):
+
+        Calculator.calculate(self, atoms, properties, system_changes)
+
+        natoms = len(self.atoms)
+        cell = self.atoms.cell
+        positions = self.atoms.positions
+
+        # FF parameters
+        rr_coeff = self.parameters.rr_coeff
+        rr_incpt = self.parameters.rr_incpt
+        r0 = self.parameters.r0
+
+        if self.nl == None:
+            self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        self.nl.update(self.atoms)
+
+        # get descriptors
+        bonds = _get_bonds(self.atoms, r0, neighborlist=self.nl)
+        bond_desc = _get_bond_descriptors(self.atoms, r0, bonds, neighborlist=self.nl)
+        bond_descriptors = [bond_desc,]
+
+        core_desc = _get_core_descriptors(self.atoms, r0, neighborlist=self.nl)
+        core_descriptors = [core_desc,]
+        
+        # get features
+        X = get_feature_matrix(core_descriptors, bond_descriptors)
+
+        # predict energy
+        energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])
+
+        self.results['energy'] = energy
