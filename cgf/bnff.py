@@ -5,15 +5,14 @@ from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
 class MikadoPotential(Calculator):
-    """Valence force field with bond-stretching and angle-bending terms.
+    """Effective force field based on the Mikado Model for flexible polymer fibers.
 
     """
 
     implemented_properties = ['energy']
     default_parameters = {'Kbond': 1.0,
                           'Kangle': 1.0,
-                          'r0': 1.0,
-                          'cosT0': -0.5}
+                          'r0': 1.0}
     nolabel = True
 
     def __init__(self, **kwargs):
@@ -26,8 +25,6 @@ class MikadoPotential(Calculator):
             force constant for angle-bending in units of [Energy]
         r0: float
             equilibrium distance in units of [length]
-        cosT0: float
-            cosine of the equilibrium angle
         """
         Calculator.__init__(self, **kwargs)
 
@@ -44,59 +41,43 @@ class MikadoPotential(Calculator):
         positions = self.atoms.positions
         phis = self.atoms.get_initial_charges()
 
+        # FF parameters
         Kbond = self.parameters.Kbond
         Kangle = self.parameters.Kangle
         r0 = self.parameters.r0
-        cosT0 = self.parameters.cosT0
-
-        bonds = _get_bonds(atoms, r0)
-        phi_energy = _get_phi_energy(phis, atoms, r0, bonds)
 
         if self.nl == None:
             self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         self.nl.update(self.atoms)
 
-        # print('- begin calculate: ', natoms)
-
+        bonds = _get_bonds(atoms, r0, neighborlist=self.nl)
+        phi_energy = _get_phi_energy(phis, atoms, r0, bonds, neighborlist=self.nl)        
+        
         energy = 0.5 * 3 * Kangle * phi_energy
         for ii in np.arange(natoms):
             neighbors, offsets = self.nl.get_neighbors(ii)
             cells = np.dot(offsets, cell)
             distance_vectors = positions[neighbors] + cells - positions[ii]
 
-#             # print('-- atom:', ii, neighbors)
-
             # iterate over neighbors of ii
             for jj in np.arange(len(neighbors)):
                 v1 = distance_vectors[jj] # vector from ii to jj
                 r1 = np.linalg.norm(v1)
 
-                # print('bond   :', ii, jj, r1-r0)
                 # bond stretching contribution to energy and forces
                 energy += 0.5 * Kbond * (r1 - r0)**2
 
-                # iterate over neighbors of ii
-                for kk in np.arange(len(neighbors)):
-                    if jj == kk:
-                        continue
-                    v2 = distance_vectors[kk] # vector from ii to kk
-                    r2 = np.linalg.norm(v2)
-                    cosT = np.dot(v1,v2)/(r1*r2)
-
-                    # print('angle 2:', ii, jj, kk, cosT)
-
-                    # angle bending contribution to energy and forces
-                    # energy += 0.5 * Kangle * (cosT - cosT0)**2
-
         self.results['energy'] = energy
 
-def _get_bonds(atoms, r0):
+def _get_bonds(atoms, r0, neighborlist=None):
     natoms = len(atoms)
     cell = atoms.cell
     positions = atoms.positions
 
-    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-    nl.update(atoms)
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(atoms)
 
     bonds = []
     # iterate over atoms
@@ -127,14 +108,15 @@ def _get_bonds(atoms, r0):
 
     return bonds
 
-def _get_phi_energy(phis, atoms, r0, bonds):
+def _get_phi_energy(phis, atoms, r0, bonds, neighborlist=None):
     natoms = len(atoms)
     cell = atoms.cell
     positions = atoms.positions
 
-    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-    nl.update(atoms)
-
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(atoms)
 
     energy = 0.0
     for b in bonds:
@@ -195,13 +177,15 @@ def _get_phi_energy(phis, atoms, r0, bonds):
     return energy
 
 
-def _get_phi0(atoms, r0):
+def _get_phi0(atoms, r0, neighborlist=None):
     natoms = len(atoms)
     cell = atoms.cell
     positions = atoms.positions
 
-    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-    nl.update(atoms)
+    neighborlist=nl
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(atoms)
 
     phi0 = np.zeros(natoms)
     for ii in np.arange(natoms):
@@ -224,6 +208,11 @@ def _energy(pos, atoms):
     atoms.set_positions(np.reshape(pos, (-1,3)))
     return atoms.get_potential_energy()
 
+def _energy_ch(ch, atoms):
+    natoms = len(atoms)
+
+    atoms.set_initial_charges(ch[0:natoms])
+    return atoms.get_potential_energy()
 
 def _energy_total(pos_ch, atoms):
     natoms = len(atoms)
