@@ -6,6 +6,7 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
+from .cgatoms import _find_linker_neighbor
 from .cycles import find_cycles, cycle_graph
 from .bnff import _get_bonds, _get_phi0
 
@@ -119,47 +120,6 @@ def get_feature_internal_gradient(core_descriptors, bond_descriptors, core_descr
 
     return X
 
-
-def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
-    
-    natoms = len(cg_atoms)
-    cell = cg_atoms.cell
-    positions = cg_atoms.positions
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    phi0 = 2*np.pi/core_linker_dir.shape[1]
-
-    core_linker_neigh = []
-    # iterate over atoms
-    for ii in range(natoms):
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        linker_neigh = []
-        # iterate over neighbors of ii
-        for jj in range(len(neighbors)):
-            v1 = distance_vectors[jj] # vector from ii to jj
-            r1 = np.linalg.norm(v1)
-
-#             print(v1)
-            for li, v2 in enumerate(core_linker_dir[ii]):
-                dot = np.dot(v1,v2)
-                det = np.cross(v1,v2)[2]
-                angle = np.arctan2(det, dot)
-
-                if np.abs(angle) < phi0/2:
-#                     print(ii, jj, li, angle)
-                    linker_neigh.append(li)
-                    break
-        core_linker_neigh.append(linker_neigh)
-
-    cg_atoms.new_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor 
     
 def _get_core_descriptors(cg_atoms, r0, neighborlist=None):
     
