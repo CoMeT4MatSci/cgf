@@ -182,7 +182,7 @@ def _get_phi0(atoms, r0, neighborlist=None):
     cell = atoms.cell
     positions = atoms.positions
 
-    neighborlist=nl
+    nl = neighborlist
     if nl==None:
         nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         nl.update(atoms)
