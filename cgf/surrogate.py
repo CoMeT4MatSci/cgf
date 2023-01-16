@@ -599,7 +599,8 @@ class MikadoRR_V2(Calculator):
     implemented_properties = ['energy', 'forces']
     default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
                           'rr_incpt': 0.0,
-                          'r0': 1.0}
+                          'r0': 1.0,
+                          'opt': True}
     nolabel = True
 
     def __init__(self, **kwargs):
@@ -612,6 +613,8 @@ class MikadoRR_V2(Calculator):
             intercept of RR model [Energy]
         r0: float
             equilibrium distance in units of [length]
+        opt: boolean
+            optimize internal DOFs
         """
         Calculator.__init__(self, **kwargs)
 
@@ -631,10 +634,24 @@ class MikadoRR_V2(Calculator):
         rr_coeff = self.parameters.rr_coeff
         rr_incpt = self.parameters.rr_incpt
         r0 = self.parameters.r0
+        opt = self.parameters.opt
 
         if self.nl == None:
             self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         self.nl.update(self.atoms)
+
+        if opt:
+            p0 = self.atoms.get_array('linker_sites')
+            res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, r0, rr_coeff, rr_incpt), 
+                           method='BFGS', 
+                           jac=True,
+                           options={'gtol': 1e-3, 'disp': True})
+            p = res.x.reshape(p0.shape)
+            # make sure that the distances to the linkage sites do not change
+            for i in range(p.shape[0]):
+                for j in range(p.shape[1]):
+                    p[i,j,:] = p[i,j,:] * (np.linalg.norm(p0[i,j,:])/np.linalg.norm(p[i,j,:]))
+            self.atoms.set_array('linker_sites', p)
 
         # get descriptors
         bonds = _get_bonds(self.atoms, r0, neighborlist=self.nl)
@@ -650,12 +667,13 @@ class MikadoRR_V2(Calculator):
         # predict energy
         energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])
         
-        # predict forces
-        forces = np.vstack([-rr_coeff @ get_feature_gradient(core_desc, bond_desc,
-                                             None, _get_bond_descriptors_gradient_V2(self.atoms, bond_params, r0, at, neighborlist=self.nl)).T for at in range(natoms)])        
-        
         self.results['energy'] = energy
-        self.results['forces'] = forces
+
+        # predict forces
+        if 'forces' in properties:
+            forces = np.vstack([-rr_coeff @ get_feature_gradient(core_desc, bond_desc,
+                                                None, _get_bond_descriptors_gradient_V2(self.atoms, bond_params, r0, at, neighborlist=self.nl)).T for at in range(natoms)])        
+            self.results['forces'] = forces
 
 def _get_bond_descriptors_V2(cg_atoms, r0, bonds, neighborlist=None):
     natoms = len(cg_atoms)
