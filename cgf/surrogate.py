@@ -6,8 +6,11 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
+from .cgatoms import _find_linker_neighbor
 from .cycles import find_cycles, cycle_graph
 from .bnff import _get_bonds, _get_phi0
+
+from scipy.optimize import minimize
 
 
 def collect_descriptors(structures, cy, mfs, r0):
@@ -119,47 +122,6 @@ def get_feature_internal_gradient(core_descriptors, bond_descriptors, core_descr
 
     return X
 
-
-def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
-    
-    natoms = len(cg_atoms)
-    cell = cg_atoms.cell
-    positions = cg_atoms.positions
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    phi0 = 2*np.pi/core_linker_dir.shape[1]
-
-    core_linker_neigh = []
-    # iterate over atoms
-    for ii in range(natoms):
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        linker_neigh = []
-        # iterate over neighbors of ii
-        for jj in range(len(neighbors)):
-            v1 = distance_vectors[jj] # vector from ii to jj
-            r1 = np.linalg.norm(v1)
-
-#             print(v1)
-            for li, v2 in enumerate(core_linker_dir[ii]):
-                dot = np.dot(v1,v2)
-                det = np.cross(v1,v2)[2]
-                angle = np.arctan2(det, dot)
-
-                if np.abs(angle) < phi0/2:
-#                     print(ii, jj, li, angle)
-                    linker_neigh.append(li)
-                    break
-        core_linker_neigh.append(linker_neigh)
-
-    cg_atoms.new_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor 
     
 def _get_core_descriptors(cg_atoms, r0, neighborlist=None):
     
@@ -454,7 +416,8 @@ class MikadoRR(Calculator):
     implemented_properties = ['energy', 'forces']
     default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
                           'rr_incpt': 0.0,
-                          'r0': 1.0}
+                          'r0': 1.0,
+                          'opt': True}
     nolabel = True
 
     def __init__(self, **kwargs):
@@ -467,6 +430,8 @@ class MikadoRR(Calculator):
             intercept of RR model [Energy]
         r0: float
             equilibrium distance in units of [length]
+        opt: boolean
+            optimize internal DOFs
         """
         Calculator.__init__(self, **kwargs)
 
@@ -486,11 +451,25 @@ class MikadoRR(Calculator):
         rr_coeff = self.parameters.rr_coeff
         rr_incpt = self.parameters.rr_incpt
         r0 = self.parameters.r0
+        opt = self.parameters.opt
 
         if self.nl == None:
             self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         self.nl.update(self.atoms)
 
+        if opt:
+            p0 = self.atoms.get_array('linker_sites')
+            res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, r0, rr_coeff, rr_incpt), 
+                           method='BFGS', 
+                           jac=True,
+                           options={'gtol': 1e-3, 'disp': True})
+            p = res.x.reshape(p0.shape)
+            # make sure that the distances to the linkage sites do not change
+            for i in range(p.shape[0]):
+                for j in range(p.shape[1]):
+                    p[i,j,:] = p[i,j,:] * (np.linalg.norm(p0[i,j,:])/np.linalg.norm(p[i,j,:]))
+            self.atoms.set_array('linker_sites', p)
+        
         # get descriptors
         bonds = _get_bonds(self.atoms, r0, neighborlist=self.nl)
         bond_desc = _get_bond_descriptors(self.atoms, r0, bonds, neighborlist=self.nl)
@@ -498,33 +477,36 @@ class MikadoRR(Calculator):
 
         core_desc = _get_core_descriptors(self.atoms, r0, neighborlist=self.nl)
         core_descriptors = [core_desc,]
-        
+
         # get features
         X = get_feature_matrix(core_descriptors, bond_descriptors)
 
         # predict energy
         energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])
         
-        # predict forces
-        forces = np.vstack([-rr_coeff @ get_feature_gradient(core_desc, bond_desc,
-                                             None, _get_bond_descriptors_gradient(self.atoms, r0, bonds, at, neighborlist=self.nl)).T for at in range(natoms)])        
-        
         self.results['energy'] = energy
-        self.results['forces'] = forces
         
-        
+        # predict forces
+        if 'forces' in properties:
+            forces = np.vstack([-rr_coeff @ get_feature_gradient(core_desc, bond_desc,
+                                             None, _get_bond_descriptors_gradient(self.atoms, r0, bonds, at, neighborlist=self.nl)).T for at in range(natoms)])        
+            self.results['forces'] = forces
 
         
 def _energy_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
+    """Get energy only."""
     p0 = cg_atoms.get_array('linker_sites')
     cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
 
+    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
+    nl.update(cg_atoms)
+    
     # get descriptors
-    bonds = _get_bonds(cg_atoms, r0)
-    bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds)
+    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+    bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
     bond_descriptors = [bond_desc,]
 
-    core_desc = _get_core_descriptors(cg_atoms, r0)
+    core_desc = _get_core_descriptors(cg_atoms, r0, neighborlist=nl)
     core_descriptors = [core_desc,]
 
     # get features
@@ -538,18 +520,57 @@ def _energy_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
     return energy
 
 def _internal_gradient(p, cg_atoms, r0, rr_coeff, rr_incpt):
+    """Get gradient wrt internal DOFs only."""
     natoms = len(cg_atoms)
     p0 = cg_atoms.get_array('linker_sites')
     cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
 
-    bonds = _get_bonds(cg_atoms, r0)    
+    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
+    nl.update(cg_atoms)
+
+    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
     
-    int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(_get_core_descriptors(cg_atoms, r0), _get_bond_descriptors(cg_atoms, r0, bonds), 
-                                _get_core_descriptors_internal_gradient(cg_atoms, r0, at, li),
-                                _get_bond_descriptors_internal_gradient(cg_atoms, r0, bonds, at, li)).T for (at,li) in itertools.product(range(natoms), range(3))])
+    int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(_get_core_descriptors(cg_atoms, r0, neighborlist=nl), 
+                                                                       _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl), 
+                                _get_core_descriptors_internal_gradient(cg_atoms, r0, at, li, neighborlist=nl),
+                                _get_bond_descriptors_internal_gradient(cg_atoms, r0, bonds, at, li, neighborlist=nl)).T for (at,li) in itertools.product(range(natoms), range(3))])
     cg_atoms.set_array('linker_sites', p0)
     
     return int_gradient.reshape(-1)
+
+def _energy_gradient_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
+    """Get energy and gradient wrt internal DOFs."""
+    natoms = len(cg_atoms)    
+    p0 = cg_atoms.get_array('linker_sites')
+    cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
+
+    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
+    nl.update(cg_atoms)
+    
+    # get descriptors
+    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+    bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
+    bond_descriptors = [bond_desc,]
+
+    core_desc = _get_core_descriptors(cg_atoms, r0, neighborlist=nl)
+    core_descriptors = [core_desc,]
+
+    # get features
+    X = get_feature_matrix(core_descriptors, bond_descriptors)
+
+    # predict energy
+    energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])    
+
+    # predict internal gradient
+    int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(_get_core_descriptors(cg_atoms, r0, neighborlist=nl), 
+                                                                       _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl), 
+                                _get_core_descriptors_internal_gradient(cg_atoms, r0, at, li, neighborlist=nl),
+                                _get_bond_descriptors_internal_gradient(cg_atoms, r0, bonds, at, li, neighborlist=nl)).T for (at,li) in itertools.product(range(natoms), range(3))])
+    
+    
+    cg_atoms.set_array('linker_sites', p0)
+    
+    return energy, int_gradient.reshape(-1)
 
 def _num_internal_gradient(cg_atoms, at_k, li, i, r0, rr_coeff, rr_incpt, d=0.001):
     p0 = cg_atoms.get_array('linker_sites')
