@@ -9,7 +9,7 @@ from ase.neighborlist import NeighborList
 
 from .cgatoms import _find_linker_neighbor
 from .cycles import find_cycles, cycle_graph
-from .bnff import _get_bonds, _get_phi0
+from .bnff import _get_bonds, _get_phi0, _get_bonds_V2
 
 from scipy.optimize import minimize
 
@@ -123,477 +123,6 @@ def get_feature_internal_gradient(core_descriptors, bond_descriptors, core_descr
 
     return X
 
-    
-def _get_core_descriptors(cg_atoms, r0, neighborlist=None):
-    
-    natoms = len(cg_atoms)
-    cell = cg_atoms.cell
-    positions = cg_atoms.positions
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    phi0 = 2*np.pi/core_linker_dir.shape[1]
-
-    core_desc = []    
-    # iterate over atoms
-    for ii in range(natoms):
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        angles = []
-        for li in range(core_linker_dir.shape[1]):
-            v1 = core_linker_dir[ii, li]
-            
-            for lj in range(li+1,core_linker_dir.shape[1]):
-
-                v2 = core_linker_dir[ii, lj]
-
-                dot = np.dot(v1,v2)
-                #det = np.cross(v1,v2)[2]
-                det = v1[0]*v2[1]-v1[1]*v2[0]
-                angle = np.arctan2(det, dot)
-
-#                 print(ii, li, lj, angle)
-                angles.append(angle)
-        core_desc.append(angles)
-    return core_desc
-
-def _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=None):
-    natoms = len(cg_atoms)
-    cell = cg_atoms.cell
-    positions = cg_atoms.positions
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    core_linker_neigh = cg_atoms.get_array('linker_neighbors')
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    bond_desc = []
-    for b in bonds:
-        ii, nii, jj, njj = b[0], b[1], b[2], b[3]
-
-        # get angle for site ii
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        v2 = core_linker_dir[ii][core_linker_neigh[ii,nii]] # vector to linkage site
-        v1 = distance_vectors[nii] # vector from ii to neighbor nii
-
-        r1 = np.linalg.norm(v1)    
-        r2 = np.linalg.norm(v2)
-
-        dot = np.dot(v1,v2)
-        #det = np.cross(v1,v2)[2]
-        det = v1[0]*v2[1]-v1[1]*v2[0]
-        phi_i = np.arctan2(det, dot)
-
-        # get angle for site jj
-        neighbors, offsets = nl.get_neighbors(jj)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[jj]
-
-        v2 = core_linker_dir[jj][core_linker_neigh[jj,njj]] # vector to linkage site
-        v1 = distance_vectors[njj] # vector from jj to neighbor njj
-
-        r1 = np.linalg.norm(v1)    
-        r2 = np.linalg.norm(v2)
-
-        dot = np.dot(v1,v2)
-        #det = np.cross(v1,v2)[2]
-        det = v1[0]*v2[1]-v1[1]*v2[0]
-        phi_j = np.arctan2(det, dot)
-
-        bond_desc.append([r1, phi_i, phi_j])
-
-    return bond_desc
-
-def _get_bond_descriptors_gradient(cg_atoms, r0, bonds, at_k, neighborlist=None):
-    natoms = len(cg_atoms)
-    cell = cg_atoms.cell
-    positions = cg_atoms.positions
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    core_linker_neigh = cg_atoms.get_array('linker_neighbors')
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    bond_desc_grad = []
-    for b in bonds:
-        ii, nii, jj, njj = b[0], b[1], b[2], b[3]
-
-        # get angle for site ii
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        v2 = core_linker_dir[ii][core_linker_neigh[ii,nii]] # vector to linkage site
-        v1 = distance_vectors[nii] # vector from ii to neighbor nii
-
-        r1 = np.linalg.norm(v1)    
-        r2 = np.linalg.norm(v2)
-
-        # r1 = sqrt(v1.v1), hence grad r1 = v1/r1. Here, v1 = R_jj - R_ii
-        dr1_dR_k = np.zeros((3,))
-        if ii == at_k:
-            dr1_dR_k[:] = -1/r1 * v1[:]
-        elif jj == at_k:
-            dr1_dR_k[:] = 1/r1 * v1[:]
-            
-            
-        dot = np.dot(v1,v2)
-        #det = np.cross(v1,v2)[2]
-        det = v1[0]*v2[1]-v1[1]*v2[0]
-        phi_i = np.arctan2(det, dot)
-
-        # the derivative of  arctan x = 1/(1+x^2)
-        # dot = v1 . v1 and thus grad dot = v1
-        # det = v1[0] * v2[1] - v1[1] * v2[0] and thus grad det = (v2[1], - v2[0], 0) 
-        dphi_i_dR_k = np.zeros((3,))
-        if ii == at_k:
-            dphi_i_dR_k[0] = -1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  )
-            dphi_i_dR_k[1] = -1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  )
-            dphi_i_dR_k[2] = -1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] )
-        elif jj == at_k:
-            dphi_i_dR_k[0] =  1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  )
-            dphi_i_dR_k[1] =  1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  )
-            dphi_i_dR_k[2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] )
-
-        # get angle for site jj
-        neighbors, offsets = nl.get_neighbors(jj)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[jj]
-
-        v2 = core_linker_dir[jj][core_linker_neigh[jj,njj]] # vector to linkage site
-        v1 = distance_vectors[njj] # vector from jj to neighbor njj
-
-        r1 = np.linalg.norm(v1)
-        r2 = np.linalg.norm(v2)
-
-        dot = np.dot(v1,v2)
-        #det = np.cross(v1,v2)[2]
-        det = v1[0]*v2[1]-v1[1]*v2[0]
-        phi_j = np.arctan2(det, dot)
-
-        # the derivative of  arctan x = 1/(1+x^2)
-        # dot = v1 . v1 and thus grad dot = v1
-        # det = v1[0] * v2[1] - v1[1] * v2[0] and thus grad det = (v2[1], - v2[0], 0)        
-        dphi_j_dR_k = np.zeros((3,))
-        if jj == at_k:
-            dphi_j_dR_k[0] = -1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  )
-            dphi_j_dR_k[1] = -1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  )
-            dphi_j_dR_k[2] = -1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] )
-        elif ii == at_k:
-            dphi_j_dR_k[0] =  1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  )
-            dphi_j_dR_k[1] =  1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  )
-            dphi_j_dR_k[2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] )
-
-        bond_desc_grad.append([dr1_dR_k, dphi_i_dR_k, dphi_j_dR_k])
-
-    return bond_desc_grad
-
-def _get_core_descriptors_internal_gradient(cg_atoms, r0, at_k, li_k, neighborlist=None):
-    
-    natoms = len(cg_atoms)
-    #cell = cg_atoms.cell
-    #positions = cg_atoms.positions
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    #phi0 = 2*np.pi/core_linker_dir.shape[1]
-
-    core_desc_grad = []    
-    # iterate over atoms
-    for ii in range(natoms):
-        #neighbors, offsets = nl.get_neighbors(ii)
-        #cells = np.dot(offsets, cell)
-        #distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        angles = []
-        for li in range(core_linker_dir.shape[1]):
-            v1 = core_linker_dir[ii, li]
-            
-            for lj in range(li+1,core_linker_dir.shape[1]):
-
-                v2 = core_linker_dir[ii, lj]
-
-                dot = np.dot(v1,v2)
-                #det = np.cross(v1,v2)[2]
-                det = v1[0]*v2[1]-v1[1]*v2[0]
-                #angle = np.arctan2(det, dot)
-
-                dangle_dL = np.zeros((3,))
-                if (ii==at_k) and (li==li_k):
-                    dangle_dL[0] =  1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  )
-                    dangle_dL[1] =  1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  )
-                    dangle_dL[2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] )
-                elif (ii==at_k) and (lj==li_k):
-                    dangle_dL[0] =  1/(1+(det/dot)**2) * ( -v1[1]/dot - (det/dot**2) * v1[0]  )
-                    dangle_dL[1] =  1/(1+(det/dot)**2) * (  v1[0]/dot - (det/dot**2) * v1[1]  )
-                    dangle_dL[2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v1[2] )
-                    
-                angles.append(dangle_dL)
-        core_desc_grad.append(angles)
-    return core_desc_grad
-
-def _get_bond_descriptors_internal_gradient(cg_atoms, r0, bonds, at_k, li_k, neighborlist=None):
-    natoms = len(cg_atoms)
-    cell = cg_atoms.cell
-    positions = cg_atoms.positions
-    core_linker_dir = cg_atoms.get_array('linker_sites')
-    core_linker_neigh = cg_atoms.get_array('linker_neighbors')
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(cg_atoms)
-
-    bond_desc_grad = []
-    for b in bonds:
-        ii, nii, jj, njj = b[0], b[1], b[2], b[3]
-
-        # get angle for site ii
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        v2 = core_linker_dir[ii][core_linker_neigh[ii,nii]] # vector to linkage site
-        v1 = distance_vectors[nii] # vector from ii to neighbor nii
-
-        r1 = np.linalg.norm(v1)    
-        r2 = np.linalg.norm(v2)
-
-        dot = np.dot(v1,v2)
-        #det = np.cross(v1,v2)[2]
-        det = v1[0]*v2[1]-v1[1]*v2[0]
-        phi_i = np.arctan2(det, dot)
-        
-        dphi_i_dL_ik = np.zeros((3,))
-        if (at_k==ii) and (li_k==core_linker_neigh[ii,nii]):
-            dphi_i_dL_ik[0] =  1/(1+(det/dot)**2) * ( -v1[1]/dot - (det/dot**2) * v1[0]  )
-            dphi_i_dL_ik[1] =  1/(1+(det/dot)**2) * (  v1[0]/dot - (det/dot**2) * v1[1]  )
-            dphi_i_dL_ik[2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v1[2] )
-
-        # get angle for site jj
-        neighbors, offsets = nl.get_neighbors(jj)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[jj]
-
-        v2 = core_linker_dir[jj][core_linker_neigh[jj,njj]] # vector to linkage site
-        v1 = distance_vectors[njj] # vector from jj to neighbor njj
-
-        r1 = np.linalg.norm(v1)    
-        r2 = np.linalg.norm(v2)
-
-        dot = np.dot(v1,v2)
-        #det = np.cross(v1,v2)[2]
-        det = v1[0]*v2[1]-v1[1]*v2[0]
-        phi_j = np.arctan2(det, dot)
-
-        dphi_j_dL_ik = np.zeros((3,))
-        if (at_k==jj) and (li_k==core_linker_neigh[jj,njj]):
-            dphi_j_dL_ik[0] =  1/(1+(det/dot)**2) * ( -v1[1]/dot - (det/dot**2) * v1[0]  )
-            dphi_j_dL_ik[1] =  1/(1+(det/dot)**2) * (  v1[0]/dot - (det/dot**2) * v1[1]  )
-            dphi_j_dL_ik[2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v1[2] )
-        
-        
-        bond_desc_grad.append([np.zeros((3,)), dphi_i_dL_ik, dphi_j_dL_ik])
-
-    return bond_desc_grad
-
-###############################################################################
-# CALCULATOR
-
-class MikadoRR(Calculator):
-    """FF based on the Mikado Model and Ridge Regression.
-
-    """
-
-    implemented_properties = ['energy', 'forces']
-    default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
-                          'rr_incpt': 0.0,
-                          'r0': 1.0,
-                          'opt': True}
-    nolabel = True
-
-    def __init__(self, **kwargs):
-        """
-        Parameters
-        ----------
-        rr_coeff: array of floats
-            RR coefficients
-        rr_incpt: float
-            intercept of RR model [Energy]
-        r0: float
-            equilibrium distance in units of [length]
-        opt: boolean
-            optimize internal DOFs
-        """
-        Calculator.__init__(self, **kwargs)
-
-        self.nl = None
-
-    def calculate(self, atoms=None, properties=implemented_properties,
-                  system_changes=['positions', 'numbers', 'cell',
-                                  'pbc']):
-
-        Calculator.calculate(self, atoms, properties, system_changes)
-
-        natoms = len(self.atoms)
-        cell = self.atoms.cell
-        positions = self.atoms.positions
-
-        # FF parameters
-        rr_coeff = self.parameters.rr_coeff
-        rr_incpt = self.parameters.rr_incpt
-        r0 = self.parameters.r0
-        opt = self.parameters.opt
-
-        if self.nl == None:
-            self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        self.nl.update(self.atoms)
-
-        if opt:
-            p0 = self.atoms.get_array('linker_sites')
-            res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, r0, rr_coeff, rr_incpt), 
-                           method='BFGS', 
-                           jac=True,
-                           options={'gtol': 1e-3, 'disp': True})
-            p = res.x.reshape(p0.shape)
-            # make sure that the distances to the linkage sites do not change
-            for i in range(p.shape[0]):
-                for j in range(p.shape[1]):
-                    p[i,j,:] = p[i,j,:] * (np.linalg.norm(p0[i,j,:])/np.linalg.norm(p[i,j,:]))
-            self.atoms.set_array('linker_sites', p)
-        
-        # get descriptors
-        bonds = _get_bonds(self.atoms, r0, neighborlist=self.nl)
-        bond_desc = _get_bond_descriptors(self.atoms, r0, bonds, neighborlist=self.nl)
-        bond_descriptors = [bond_desc,]
-
-        core_desc = _get_core_descriptors(self.atoms, r0, neighborlist=self.nl)
-        core_descriptors = [core_desc,]
-
-        # get features
-        X = get_feature_matrix(core_descriptors, bond_descriptors)
-
-        # predict energy
-        energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])
-        
-        self.results['energy'] = energy
-        
-        # predict forces
-        if 'forces' in properties:
-            forces = np.vstack([-rr_coeff @ get_feature_gradient(core_desc, bond_desc,
-                                             None, _get_bond_descriptors_gradient(self.atoms, r0, bonds, at, neighborlist=self.nl)).T for at in range(natoms)])        
-            self.results['forces'] = forces
-
-        
-def _energy_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
-    """Get energy only."""
-    p0 = cg_atoms.get_array('linker_sites')
-    cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
-
-    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
-    nl.update(cg_atoms)
-    
-    # get descriptors
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
-    bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
-    bond_descriptors = [bond_desc,]
-
-    core_desc = _get_core_descriptors(cg_atoms, r0, neighborlist=nl)
-    core_descriptors = [core_desc,]
-
-    # get features
-    X = get_feature_matrix(core_descriptors, bond_descriptors)
-
-    # predict energy
-    energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])    
-    
-    cg_atoms.set_array('linker_sites', p0)
-    
-    return energy
-
-def _internal_gradient(p, cg_atoms, r0, rr_coeff, rr_incpt):
-    """Get gradient wrt internal DOFs only."""
-    natoms = len(cg_atoms)
-    p0 = cg_atoms.get_array('linker_sites')
-    cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
-
-    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
-    nl.update(cg_atoms)
-
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
-    
-    int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(_get_core_descriptors(cg_atoms, r0, neighborlist=nl), 
-                                                                       _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl), 
-                                _get_core_descriptors_internal_gradient(cg_atoms, r0, at, li, neighborlist=nl),
-                                _get_bond_descriptors_internal_gradient(cg_atoms, r0, bonds, at, li, neighborlist=nl)).T for (at,li) in itertools.product(range(natoms), range(3))])
-    cg_atoms.set_array('linker_sites', p0)
-    
-    return int_gradient.reshape(-1)
-
-def _energy_gradient_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
-    """Get energy and gradient wrt internal DOFs."""
-    natoms = len(cg_atoms)    
-    p0 = cg_atoms.get_array('linker_sites')
-    cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
-
-    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
-    nl.update(cg_atoms)
-    
-    # get descriptors
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
-    bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
-    bond_descriptors = [bond_desc,]
-
-    core_desc = _get_core_descriptors(cg_atoms, r0, neighborlist=nl)
-    core_descriptors = [core_desc,]
-
-    # get features
-    X = get_feature_matrix(core_descriptors, bond_descriptors)
-
-    # predict energy
-    energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])    
-
-    # predict internal gradient
-    int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(_get_core_descriptors(cg_atoms, r0, neighborlist=nl), 
-                                                                       _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl), 
-                                _get_core_descriptors_internal_gradient(cg_atoms, r0, at, li, neighborlist=nl),
-                                _get_bond_descriptors_internal_gradient(cg_atoms, r0, bonds, at, li, neighborlist=nl)).T for (at,li) in itertools.product(range(natoms), range(3))])
-    
-    
-    cg_atoms.set_array('linker_sites', p0)
-    
-    return energy, int_gradient.reshape(-1)
-
-def _num_internal_gradient(cg_atoms, at_k, li, i, r0, rr_coeff, rr_incpt, d=0.001):
-    p0 = cg_atoms.get_array('linker_sites')
-    p = p0.copy()
-    p[at_k, li, i] += d
-
-    energy_plus = _energy_internal(p.reshape(-1), cg_atoms, r0, rr_coeff, rr_incpt)
-
-    p[at_k, li, i] -= 2 * d
-    energy_minus = _energy_internal(p.reshape(-1), cg_atoms, r0, rr_coeff, rr_incpt)
-        
-    return (energy_plus - energy_minus)/(2*d)
-
-
 ###############################################################################
 # CALCULATOR V2
 class MikadoRR_V2(Calculator):
@@ -654,7 +183,7 @@ class MikadoRR_V2(Calculator):
 
         if opt:
             p0 = self.atoms.get_array('linker_sites')
-            res = minimize(_energy_gradient_internal_V2, p0.reshape(-1), args=(self.atoms, r0, rr_coeff, rr_incpt), 
+            res = minimize(_energy_gradient_internal_V3, p0.reshape(-1), args=(self.atoms, r0, rr_coeff, rr_incpt, self.nl), 
                            method='BFGS', 
                            jac=True,
                            options={'gtol': 1e-3, 'disp': True})
@@ -666,11 +195,11 @@ class MikadoRR_V2(Calculator):
             self.atoms.set_array('linker_sites', p)
 
         # get descriptors
-        bonds = _get_bonds(self.atoms, r0, neighborlist=self.nl)
+        bonds = _get_bonds_V2(self.atoms, r0, neighborlist=self.nl)
         bond_desc, bond_params = _get_bond_descriptors_V2(self.atoms, r0, bonds, neighborlist=self.nl)
         bond_descriptors = [bond_desc,]
 
-        core_desc = _get_core_descriptors(self.atoms, r0, neighborlist=self.nl)
+        core_desc = _get_core_descriptors_V2(self.atoms, r0, neighborlist=self.nl)
         core_descriptors = [core_desc,]
         
         # get features
@@ -684,25 +213,29 @@ class MikadoRR_V2(Calculator):
         # predict forces
         if 'forces' in properties:
             forces = np.vstack([-rr_coeff @ get_feature_gradient(core_desc, bond_desc,
-                                                None, _get_bond_descriptors_gradient_V2(self.atoms, bond_params, r0, at, neighborlist=self.nl)).T for at in range(natoms)])        
+                                                None, _get_bond_descriptors_gradient_V3(self.atoms, bond_params, r0, at, neighborlist=self.nl)).T for at in range(natoms)])        
             self.results['forces'] = forces
 
 
-def _energy_gradient_internal_V2(p, cg_atoms, r0, rr_coeff, rr_incpt):
+###############################################################################
+
+def _energy_gradient_internal_V3(p, cg_atoms, r0, rr_coeff, rr_incpt, neighborlist=None):
     """Get energy and gradient wrt internal DOFs."""
     natoms = len(cg_atoms)    
     p0 = cg_atoms.get_array('linker_sites')
     cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
 
-    nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
-    nl.update(cg_atoms)
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(cg_atoms)
     
     # get descriptors
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+    bonds = _get_bonds_V2(cg_atoms, r0, neighborlist=nl)
     bond_desc, bond_params = _get_bond_descriptors_V2(cg_atoms, r0, bonds, neighborlist=nl)
     bond_descriptors = [bond_desc,]
 
-    core_desc = _get_core_descriptors(cg_atoms, r0, neighborlist=nl)
+    core_desc = _get_core_descriptors_V2(cg_atoms, r0, neighborlist=nl)
     core_descriptors = [core_desc,]
 
     # get features
@@ -712,24 +245,63 @@ def _energy_gradient_internal_V2(p, cg_atoms, r0, rr_coeff, rr_incpt):
     energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])    
 
     # predict internal gradient
-    int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(core_desc, 
-                                                                       bond_desc, 
-                                _get_core_descriptors_internal_gradient(cg_atoms, r0, at, li, neighborlist=nl),
-                                _get_bond_descriptors_internal_gradient_V2(cg_atoms, bond_params, r0, at, li, neighborlist=nl)).T for (at,li) in itertools.product(range(natoms), range(3))])
+    int_gradient = np.zeros((natoms*3, 3)) # natoms * nlinker_per_core, ndirections
+    for (at,li) in itertools.product(range(natoms), range(3)):
+        int_gradient[at*3 + li,:] = rr_coeff @ get_feature_internal_gradient(core_desc, 
+                                                                bond_desc, 
+                                _get_core_descriptors_internal_gradient_V2(cg_atoms, r0, at, li, neighborlist=nl),
+                                _get_bond_descriptors_internal_gradient_V3(cg_atoms, bond_params, r0, at, li, neighborlist=nl)).T
     
     
     cg_atoms.set_array('linker_sites', p0)
     
     return energy, int_gradient.reshape(-1)
 
+def _get_core_descriptors_V2(cg_atoms, r0, neighborlist=None):
+    
+    natoms = len(cg_atoms)
+    cell = cg_atoms.cell
+    positions = cg_atoms.positions
+
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(cg_atoms)
+
+    core_linker_dir = cg_atoms.get_array('linker_sites')
+    nangles = core_linker_dir.shape[1]
+
+    core_desc = np.zeros((natoms, nangles))
+    # iterate over atoms
+    for ii in range(natoms):
+        neighbors, offsets = nl.get_neighbors(ii)
+        cells = np.dot(offsets, cell)
+        distance_vectors = positions[neighbors] + cells - positions[ii]
+
+        iangle = 0
+        for li in range(core_linker_dir.shape[1]):
+            v1 = core_linker_dir[ii, li]
+            
+            for lj in range(li+1,core_linker_dir.shape[1]):
+                v2 = core_linker_dir[ii, lj]
+
+                dot = np.dot(v1,v2)                
+                det = v1[0]*v2[1]-v1[1]*v2[0] # = np.cross(v1,v2)[2]
+                angle = np.arctan2(det, dot)
+                
+                core_desc[ii, iangle] = angle
+                iangle += 1
+    return core_desc
+
 #@nb.njit(fastmath=True,parallel=True)
 def calc_rs_dot_det_phi(v1, v2):
 
     r1 = np.linalg.norm(v1)    
-    r2 = np.linalg.norm(v2)
+#    r2 = np.linalg.norm(v2) # not needed
+    r2 = r1
+#    dot = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2] # 
     dot = np.dot(v1, v2)
-    #det_ii = np.cross(v1_ii, v2_ii)[2]
-    det = v1[0]*v2[1]-v1[1]*v2[0]
+    det = v1[0]*v2[1] - v1[1]*v2[0]
     phi = np.arctan2(det, dot)
     return r1, r2, dot, det, phi
 
@@ -745,9 +317,9 @@ def _get_bond_descriptors_V2(cg_atoms, r0, bonds, neighborlist=None):
         nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         nl.update(cg_atoms)
     
-    bond_desc = []
+    bond_desc = np.zeros((len(bonds), 3))
     bond_params = []
-    for b in bonds:
+    for ib, b in enumerate(bonds):
         ii, nii, jj, njj = b[0], b[1], b[2], b[3]
 
         # get angle for site ii
@@ -761,7 +333,6 @@ def _get_bond_descriptors_V2(cg_atoms, r0, bonds, neighborlist=None):
 
         r1_ii, r2_ii, dot_ii, det_ii, phi_ii = calc_rs_dot_det_phi(v1_ii, v2_ii)
 
-
         # get angle for site jj
         neighbors, offsets = nl.get_neighbors(jj)
         cells = np.dot(offsets, cell)
@@ -772,13 +343,14 @@ def _get_bond_descriptors_V2(cg_atoms, r0, bonds, neighborlist=None):
 
         r1_jj, r2_jj, dot_jj, det_jj, phi_jj = calc_rs_dot_det_phi(v1_jj, v2_jj)
 
-
-        bond_desc.append([r1_jj, phi_ii, phi_jj])
+        bond_desc[ib, 0] = r1_jj 
+        bond_desc[ib, 1] = phi_ii
+        bond_desc[ib, 2] = phi_jj
         bond_params.append([[ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii], [jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj]])
 
     return bond_desc, bond_params
 
-def _get_bond_descriptors_gradient_V2(cg_atoms, bond_params, r0, at_k, neighborlist=None):
+def _get_bond_descriptors_gradient_V3(cg_atoms, bond_params, r0, at_k, neighborlist=None):
     natoms = len(cg_atoms)
 
     nl = neighborlist
@@ -786,61 +358,61 @@ def _get_bond_descriptors_gradient_V2(cg_atoms, bond_params, r0, at_k, neighborl
         nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         nl.update(cg_atoms)
 
-    bond_desc_grad = []
-    for bp in bond_params:
+    bond_desc_grad = np.zeros((len(bond_params),3,3))
+    for ib, bp in enumerate(bond_params):
         ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii = bp[0]
         jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj = bp[1]
 
-        # get angle for site ii
-
         # r1 = sqrt(v1.v1), hence grad r1 = v1/r1. Here, v1 = R_jj - R_ii
-        dr1_dR_k = np.zeros((3,))
-        if ii == at_k:
-            dr1_dR_k[:] = -1/r1_ii * v1_ii[:]
-        elif jj == at_k:
-            dr1_dR_k[:] = 1/r1_ii * v1_ii[:]
+
+        # get angle for site ii
             
         # the derivative of  arctan x = 1/(1+x^2)
         # dot = v1 . v1 and thus grad dot = v1
         # det = v1[0] * v2[1] - v1[1] * v2[0] and thus grad det = (v2[1], - v2[0], 0) 
-        dphi_i_dR_k = np.zeros((3,))
-        detsq_dotsq = (det_ii/dot_ii)**2
-        det_dotsq = (det_ii/dot_ii**2)
         if ii == at_k:
-            dphi_i_dR_k[0] = -1/(1+detsq_dotsq) * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  )
-            dphi_i_dR_k[1] = -1/(1+detsq_dotsq) * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  )
-            dphi_i_dR_k[2] = -1/(1+detsq_dotsq) * ( - det_dotsq * v2_ii[2] )
+            bond_desc_grad[ib,0,:] = -1/r1_ii * v1_ii[:] # dr1_dR_k[:]            
+            
+            detsq_dotsq = (det_ii/dot_ii)**2
+            det_dotsq = (det_ii/dot_ii**2)
+            
+            bond_desc_grad[ib,1,0] = -1/(1+detsq_dotsq) * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  ) # dphi_i_dR_k[0]
+            bond_desc_grad[ib,1,1] = -1/(1+detsq_dotsq) * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  ) # dphi_i_dR_k[1]
+            bond_desc_grad[ib,1,2] = -1/(1+detsq_dotsq) * ( - det_dotsq * v2_ii[2] ) # dphi_i_dR_k[2]
         elif jj == at_k:
-            dphi_i_dR_k[0] =  1/(1+detsq_dotsq) * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  )
-            dphi_i_dR_k[1] =  1/(1+detsq_dotsq) * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  )
-            dphi_i_dR_k[2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v2_ii[2] )
+            detsq_dotsq = (det_ii/dot_ii)**2
+            det_dotsq = (det_ii/dot_ii**2)
+            
+            bond_desc_grad[ib,1,0] =  1/(1+detsq_dotsq) * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  )
+            bond_desc_grad[ib,1,1] =  1/(1+detsq_dotsq) * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  )
+            bond_desc_grad[ib,1,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v2_ii[2] )
 
         # get angle for site jj
         
         # the derivative of  arctan x = 1/(1+x^2)
         # dot = v1 . v1 and thus grad dot = v1
         # det = v1[0] * v2[1] - v1[1] * v2[0] and thus grad det = (v2[1], - v2[0], 0)        
-        dphi_j_dR_k = np.zeros((3,))
-        detsq_dotsq = (det_jj/dot_jj)**2
-        det_dotsq = (det_jj/dot_jj**2)
         if jj == at_k:
-            dphi_j_dR_k[0] = -1/(1+detsq_dotsq) * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  )
-            dphi_j_dR_k[1] = -1/(1+detsq_dotsq) * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  )
-            dphi_j_dR_k[2] = -1/(1+detsq_dotsq) * ( - det_dotsq * v2_jj[2] )
+            bond_desc_grad[ib,0,:] = 1/r1_ii * v1_ii[:] # dr1_dR_k[:]
+            
+            detsq_dotsq = (det_jj/dot_jj)**2
+            det_dotsq = (det_jj/dot_jj**2)
+            
+            bond_desc_grad[ib,2,0] = -1/(1+detsq_dotsq) * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  ) # dphi_j_dR_k[0]
+            bond_desc_grad[ib,2,1] = -1/(1+detsq_dotsq) * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  ) # dphi_j_dR_k[1]
+            bond_desc_grad[ib,2,2] = -1/(1+detsq_dotsq) * ( - det_dotsq * v2_jj[2] ) # dphi_j_dR_k[2]
         elif ii == at_k:
-            dphi_j_dR_k[0] =  1/(1+detsq_dotsq) * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  )
-            dphi_j_dR_k[1] =  1/(1+detsq_dotsq) * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  )
-            dphi_j_dR_k[2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v2_jj[2] )
-
-        bond_desc_grad.append([dr1_dR_k, dphi_i_dR_k, dphi_j_dR_k])
+            detsq_dotsq = (det_jj/dot_jj)**2
+            det_dotsq = (det_jj/dot_jj**2)
+            
+            bond_desc_grad[ib,2,0] =  1/(1+detsq_dotsq) * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  )
+            bond_desc_grad[ib,2,1] =  1/(1+detsq_dotsq) * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  )
+            bond_desc_grad[ib,2,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v2_jj[2] )
 
     return bond_desc_grad
 
-def _get_bond_descriptors_internal_gradient_V2(cg_atoms, bond_params, r0, at_k, li_k, neighborlist=None):
+def _get_bond_descriptors_internal_gradient_V3(cg_atoms, bond_params, r0, at_k, li_k, neighborlist=None):
     natoms = len(cg_atoms)
-    #cell = cg_atoms.cell
-    #positions = cg_atoms.positions
-    #core_linker_dir = cg_atoms.get_array('linker_sites')
     core_linker_neigh = cg_atoms.get_array('linker_neighbors')
 
     nl = neighborlist
@@ -848,41 +420,67 @@ def _get_bond_descriptors_internal_gradient_V2(cg_atoms, bond_params, r0, at_k, 
         nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
         nl.update(cg_atoms)
 
-    bond_desc_grad = []
-    for bp in bond_params:
+    bond_desc_grad = np.zeros((len(bond_params),3,3))
+    for ib, bp in enumerate(bond_params):
         ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii = bp[0]
         jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj = bp[1]
 
         # get angle for site ii
-
-        #neighbors, offsets = nl.get_neighbors(ii)
-        #cells = np.dot(offsets, cell)
-        #distance_vectors = positions[neighbors] + cells - positions[ii]
-
-        dphi_i_dL_ik = np.zeros((3,))        
         if (at_k==ii) and (li_k==core_linker_neigh[ii,nii]):
             detsq_dotsq = (det_ii/dot_ii)**2
             det_dotsq = (det_ii/dot_ii**2)
-            dphi_i_dL_ik[0] =  1/(1+detsq_dotsq) * ( -v1_ii[1]/dot_ii - det_dotsq * v1_ii[0]  )
-            dphi_i_dL_ik[1] =  1/(1+detsq_dotsq) * (  v1_ii[0]/dot_ii - det_dotsq * v1_ii[1]  )
-            dphi_i_dL_ik[2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v1_ii[2] )
+            bond_desc_grad[ib,1,0] =  1/(1+detsq_dotsq) * ( -v1_ii[1]/dot_ii - det_dotsq * v1_ii[0]  ) # dphi_i_dL_ik[0]
+            bond_desc_grad[ib,1,1] =  1/(1+detsq_dotsq) * (  v1_ii[0]/dot_ii - det_dotsq * v1_ii[1]  ) # dphi_i_dL_ik[1]
+            bond_desc_grad[ib,1,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v1_ii[2] ) # dphi_i_dL_ik[2]
 
         # get angle for site jj
-
-        #neighbors, offsets = nl.get_neighbors(jj)
-        #cells = np.dot(offsets, cell)
-        #distance_vectors = positions[neighbors] + cells - positions[jj]
-
-        dphi_j_dL_ik = np.zeros((3,))
-        
         if (at_k==jj) and (li_k==core_linker_neigh[jj,njj]):
             detsq_dotsq = (det_jj/dot_jj)**2
             det_dotsq = (det_jj/dot_jj**2)
-            dphi_j_dL_ik[0] =  1/(1+detsq_dotsq) * ( -v1_jj[1]/dot_jj - det_dotsq * v1_jj[0]  )
-            dphi_j_dL_ik[1] =  1/(1+detsq_dotsq) * (  v1_jj[0]/dot_jj - det_dotsq * v1_jj[1]  )
-            dphi_j_dL_ik[2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v1_jj[2] )
-        
-        
-        bond_desc_grad.append([np.zeros((3,)), dphi_i_dL_ik, dphi_j_dL_ik])
-
+            bond_desc_grad[ib,2,0] =  1/(1+detsq_dotsq) * ( -v1_jj[1]/dot_jj - det_dotsq * v1_jj[0]  ) # dphi_j_dL_ik[0]
+            bond_desc_grad[ib,2,1] =  1/(1+detsq_dotsq) * (  v1_jj[0]/dot_jj - det_dotsq * v1_jj[1]  ) # dphi_j_dL_ik[1]
+            bond_desc_grad[ib,2,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v1_jj[2] ) # dphi_j_dL_ik[2]
+                
     return bond_desc_grad
+
+def _get_core_descriptors_internal_gradient_V2(cg_atoms, r0, at_k, li_k, neighborlist=None):
+    natoms = len(cg_atoms)
+
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(cg_atoms)
+
+    core_linker_dir = cg_atoms.get_array('linker_sites')
+    nangles = core_linker_dir.shape[1]
+
+    core_desc_grad = np.zeros((natoms, nangles, 3))
+
+    # iterate over atoms not necessary, since ii==at_k
+    ii = at_k
+    iangle = 0
+    for li in range(core_linker_dir.shape[1]):
+        v1 = core_linker_dir[ii, li]
+
+        for lj in range(li+1,core_linker_dir.shape[1]):
+            v2 = core_linker_dir[ii, lj]
+
+            if (ii==at_k) and (li==li_k):
+                dot = np.dot(v1,v2)
+                det = v1[0]*v2[1]-v1[1]*v2[0] #= np.cross(v1,v2)[2]
+
+                core_desc_grad[ii, iangle, 0] =  1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  ) # dangle_dL[0]
+                core_desc_grad[ii, iangle, 1] =  1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  ) # dangle_dL[1]
+                core_desc_grad[ii, iangle, 2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] ) # dangle_dL[2]
+
+            elif (ii==at_k) and (lj==li_k):
+                dot = np.dot(v1,v2)
+                det = v1[0]*v2[1]-v1[1]*v2[0] #= np.cross(v1,v2)[2]
+
+                core_desc_grad[ii, iangle, 0] =  1/(1+(det/dot)**2) * ( -v1[1]/dot - (det/dot**2) * v1[0]  )
+                core_desc_grad[ii, iangle, 1] =  1/(1+(det/dot)**2) * (  v1[0]/dot - (det/dot**2) * v1[1]  )
+                core_desc_grad[ii, iangle, 2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v1[2] )
+
+            iangle += 1
+    
+    return core_desc_grad

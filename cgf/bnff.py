@@ -108,6 +108,31 @@ def _get_bonds(atoms, r0, neighborlist=None):
 
     return bonds
 
+def _get_bonds_V2(atoms, r0, neighborlist=None):
+    natoms = len(atoms)
+
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(atoms)
+
+    bonds = []
+    # iterate over atoms
+    for ii in np.arange(natoms):
+        neighbors, offsets = nl.get_neighbors(ii)
+
+        # iterate over neighbors of ii
+        for jj in np.arange(len(neighbors)):
+            neighbors_jj, offsets_jj = nl.get_neighbors(neighbors[jj])
+
+            # iterate over neighbors of jj
+            for kk in np.arange(len(neighbors_jj)):
+
+                if neighbors_jj[kk]==ii:                    
+                    bonds.append([ii, jj, neighbors[jj], kk])
+
+    return bonds
+
 def _get_phi_energy(phis, atoms, r0, bonds, neighborlist=None):
     natoms = len(atoms)
     cell = atoms.cell
