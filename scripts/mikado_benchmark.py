@@ -4,7 +4,7 @@ sys.path.insert(0, '../') # adjust path to the base directory of the package
 import cProfile as profile
 
 from cgf.surrogate_ref import MikadoRR
-from cgf.surrogate import MikadoRR_V2
+from cgf.surrogate import MikadoRR as MikadoRR_V2
 from cgf.cgatoms import read_cgatoms
 
 import pickle
@@ -36,14 +36,16 @@ E_V1 = cg_atoms_V1.get_potential_energy()
 
 end = timer()
 print('-- finished (%4.1f s).' % (end-start))
+print('-- energy = %5.3f\n' % (E_V1))
 
-print('-- start energy calculation with MikadoRR ...')
+print('-- start force calculation with MikadoRR ...')
 start = timer()
 
 forces_V1 = cg_atoms_V1.get_forces()
 
 end = timer()
 print('-- finished (%4.1f s).' % (end-start))
+print()
 
 
 
@@ -63,6 +65,7 @@ prof.disable()
 
 end = timer()
 print('-- finished (%4.1f s).' % (end-start))
+print('-- energy = %5.3f\n' % (E_V2))
 
 prof.dump_stats('bench.stats')
 
@@ -76,4 +79,4 @@ print('-- finished (%4.1f s).' % (end-start))
 
 print()
 print('-- energy difference ', E_V1 - E_V2)
-print('-- force difference ', forces_V1 - forces_V2)
+print('-- force difference \n', forces_V1 - forces_V2)
