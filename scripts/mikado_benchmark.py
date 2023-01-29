@@ -1,6 +1,7 @@
 import sys, os
 sys.path.insert(0, '../') # adjust path to the base directory of the package
 
+from timeit import default_timer as timer
 import cProfile as profile
 
 from cgf.surrogate_ref import MikadoRR
@@ -9,7 +10,6 @@ from cgf.cgatoms import read_cgatoms
 
 import pickle
 import numpy as np
-from timeit import default_timer as timer
 
 
 def load_pickle(filename):

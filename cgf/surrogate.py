@@ -179,7 +179,7 @@ class MikadoRR(Calculator):
 
         if self.nl == None:
             self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        self.nl.update(self.atoms)
+            self.nl.update(self.atoms)
 
         if opt:
             p0 = self.atoms.get_array('linker_sites')

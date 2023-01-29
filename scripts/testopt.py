@@ -6,8 +6,8 @@ sys.path.insert(0, '../')
 from cgf.cgatoms import *
 from cgf.surrogate import MikadoRR
 
-s = read("5-8-5_carbon.gen")
-cof585 = read("COF-5_585_opt.gen")
+s = read("../test-data/5-8-5_carbon.gen")
+cof585 = read("../test-data/COF-5_585_opt.gen")
 
 s.set_cell(cof585.cell, scale_atoms=True)
 cg_atoms = init_cgatoms(s, 2.46, r0=35.082756/np.sqrt(3))
