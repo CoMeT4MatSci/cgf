@@ -5,6 +5,7 @@ from ase import Atoms
 from ase.io import read
 from ase.data import atomic_numbers, atomic_names, atomic_masses, covalent_radii
 
+from timeit import default_timer as timer
 
 def get_AC(atoms, covalent_factor=1.3, pbc=False):
     """
@@ -47,10 +48,19 @@ def get_AC(atoms, covalent_factor=1.3, pbc=False):
 
     
 def find_cycles(s, max_cycle_len=6):
-    AC = get_AC(s, covalent_factor=1.3)
+    
+    print('--- start  graph construction ...')
+    start = timer()    
+    AC = get_AC(s, covalent_factor=1.3)    
     G = nx.from_numpy_matrix(AC)
+    end = timer()
+    print('--- finished (%4.1f s).' % (end-start))
 
+    print('--- start minimum_cycle_basis ...')
+    start = timer()        
     cy = nx.minimum_cycle_basis(G)
+    end = timer()
+    print('--- finished (%4.1f s).' % (end-start))
 
     # this should also work
     # G_dir = G.to_directed()
@@ -60,6 +70,9 @@ def find_cycles(s, max_cycle_len=6):
     #     if len(c) > 2:
     #         cy.append(c)
 
+    print('--- select cycles ...')
+    start = timer()            
+    
     # find edges not in a cycle of length less than max_cycle_len
     # and treat them as "2 node cycles"
     cy_flat = [c for c in cy if len(c) <= max_cycle_len]
@@ -76,6 +89,8 @@ def find_cycles(s, max_cycle_len=6):
         if not in_cycle:
             # print('edge (%d, %d) not in a cycle' % e)        
             cy.append([e[0], e[1]])
+    end = timer()
+    print('--- finished (%4.1f s).' % (end-start))
             
     return cy
 
