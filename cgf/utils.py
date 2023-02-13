@@ -1,5 +1,4 @@
 from ase import Atoms
-import matplotlib.pyplot as plt
 
 def remove_hatoms(s):
     del s[[atom.symbol == 'H' for atom in s]]
@@ -58,6 +57,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
     Returns:
         fig, ax
     """
+    import matplotlib.pyplot as plt
 
     natoms = len(cg_atoms)
     cell = cg_atoms.cell

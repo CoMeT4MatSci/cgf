@@ -7,11 +7,49 @@ from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
 from .cgatoms import _find_linker_neighbor
-from .cycles import find_cycles, cycle_graph
-from .bnff import _get_bonds, _get_phi0, _get_bonds_V2
+from .cycles import cycle_graph
 
 from scipy.optimize import minimize
 
+
+def _get_bonds_old(atoms, r0, neighborlist=None):
+    natoms = len(atoms)
+    cell = atoms.cell
+    positions = atoms.positions
+
+    nl = neighborlist
+    if nl==None:
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl.update(atoms)
+
+    bonds = []
+    # iterate over atoms
+    for ii in np.arange(natoms):
+        neighbors, offsets = nl.get_neighbors(ii)
+        cells = np.dot(offsets, cell)
+        distance_vectors = positions[neighbors] + cells - positions[ii]
+
+        # iterate over neighbors of ii
+        for jj in np.arange(len(neighbors)):
+            v1 = distance_vectors[jj] # vector from ii to jj
+            r1 = np.linalg.norm(v1)
+
+            neighbors_jj, offsets_jj = nl.get_neighbors(neighbors[jj])
+            cells_jj = np.dot(offsets_jj, cell)
+            distance_vectors_jj = positions[neighbors_jj] + cells_jj - positions[neighbors[jj]]
+
+            # iterate over neighbors of jj
+            for kk in np.arange(len(neighbors_jj)):
+                v2 = distance_vectors_jj[kk] # vector from jj to kk
+                r2 = np.linalg.norm(v2)
+                cosT = -np.dot(v1,v2)/(r1*r2)
+
+                # print(ii, jj, neighbors[jj], kk, cosT)
+
+                if np.isclose(cosT, 1.0):
+                    bonds.append([ii, jj, neighbors[jj], kk])
+
+    return bonds
 
 def collect_descriptors(structures, cy, mfs, r0):
     core_descriptors = []
@@ -30,7 +68,7 @@ def collect_descriptors(structures, cy, mfs, r0):
         
         _find_linker_neighbor(cg_atoms, r0, neighborlist=nl)
 
-        bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+        bonds = _get_bonds_old(cg_atoms, r0, neighborlist=nl)
         bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
         bond_descriptors.append(bond_desc)
 
@@ -479,7 +517,7 @@ class MikadoRR(Calculator):
             self.atoms.set_array('linker_sites', p)
         
         # get descriptors
-        bonds = _get_bonds(self.atoms, r0, neighborlist=self.nl)
+        bonds = _get_bonds_old(self.atoms, r0, neighborlist=self.nl)
         bond_desc = _get_bond_descriptors(self.atoms, r0, bonds, neighborlist=self.nl)
         bond_descriptors = [bond_desc,]
 
@@ -510,7 +548,7 @@ def _energy_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
     nl.update(cg_atoms)
     
     # get descriptors
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+    bonds = _get_bonds_old(cg_atoms, r0, neighborlist=nl)
     bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
     bond_descriptors = [bond_desc,]
 
@@ -556,7 +594,7 @@ def _energy_gradient_internal(p, cg_atoms, r0, rr_coeff, rr_incpt):
     nl.update(cg_atoms)
     
     # get descriptors
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+    bonds = _get_bonds_old(cg_atoms, r0, neighborlist=nl)
     bond_desc = _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl)
     bond_descriptors = [bond_desc,]
 

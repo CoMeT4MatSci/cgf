@@ -27,6 +27,7 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
     phi0 = 2*np.pi/core_linker_dir.shape[1]
 
     core_linker_neigh = []
+    neigh_dist_vec = [] 
     # iterate over atoms
     for ii in range(natoms):
         neighbors, offsets = nl.get_neighbors(ii)
@@ -34,23 +35,25 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
         distance_vectors = positions[neighbors] + cells - positions[ii]
 
         linker_neigh = []
+        dist_vec = []
         # iterate over neighbors of ii
         for jj in range(len(neighbors)):
             v1 = distance_vectors[jj] # vector from ii to jj
             r1 = np.linalg.norm(v1)
-
+            dist_vec.append(distance_vectors[jj])
             for li, v2 in enumerate(core_linker_dir[ii]):
                 dot = np.dot(v1,v2)
                 det = np.cross(v1,v2)[2]
                 angle = np.arctan2(det, dot)
 
                 if np.abs(angle) < phi0/2:
-                    linker_neigh.append(li)
+                    linker_neigh.append(li) 
                     break
         core_linker_neigh.append(linker_neigh)
-
+        neigh_dist_vec.append(dist_vec)
+    print('neigh_dist_vec', neigh_dist_vec[0])
     cg_atoms.set_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor
-
+    return np.array(neigh_dist_vec)
 
 def find_topology(cg_atoms, r0):
     """

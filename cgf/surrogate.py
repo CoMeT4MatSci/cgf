@@ -6,9 +6,9 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
-from .cgatoms import _find_linker_neighbor, find_topology, find_neighbor_distances, find_linker_neighbors
-from .cycles import find_cycles, cycle_graph
-from .bnff import _get_phi0, _get_bonds_V2
+from .cgatoms import find_topology, find_neighbor_distances, find_linker_neighbors
+from .cycles import cycle_graph
+from .bnff import _get_bonds
 
 from scipy.optimize import minimize
 
@@ -34,7 +34,7 @@ def collect_descriptors(structures, cy, mfs, r0):
         
         #_find_linker_neighbor(cg_atoms, r0, neighborlist=nl)
 
-        bonds = _get_bonds_V2(cg_atoms)
+        bonds = _get_bonds(cg_atoms)
         bond_desc = _get_bond_descriptors(cg_atoms, bonds)
         bond_descriptors.append(bond_desc)
 
@@ -194,7 +194,7 @@ class MikadoRR(Calculator):
             self.atoms.set_array('linker_sites', p)
 
         # get descriptors
-        bonds = _get_bonds_V2(self.atoms)
+        bonds = _get_bonds(self.atoms)
         bond_desc, bond_params = _get_bond_descriptors(self.atoms, bonds)
         bond_descriptors = [bond_desc,]
 
@@ -226,7 +226,7 @@ def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):
     cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
 
     # get descriptors
-    bonds = _get_bonds_V2(cg_atoms)
+    bonds = _get_bonds(cg_atoms)
     bond_desc, bond_params = _get_bond_descriptors(cg_atoms, bonds)
     bond_descriptors = [bond_desc,]
 
