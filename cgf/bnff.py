@@ -69,61 +69,18 @@ class MikadoPotential(Calculator):
 
         self.results['energy'] = energy
 
-def _get_bonds(atoms, r0, neighborlist=None):
+def _get_bonds(atoms):
     natoms = len(atoms)
-    cell = atoms.cell
-    positions = atoms.positions
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(atoms)
+    neigh_ids = atoms.get_array('neighbor_ids')
 
     bonds = []
     # iterate over atoms
     for ii in np.arange(natoms):
-        neighbors, offsets = nl.get_neighbors(ii)
-        cells = np.dot(offsets, cell)
-        distance_vectors = positions[neighbors] + cells - positions[ii]
+        neighbors = neigh_ids[ii]
 
         # iterate over neighbors of ii
         for jj in np.arange(len(neighbors)):
-            v1 = distance_vectors[jj] # vector from ii to jj
-            r1 = np.linalg.norm(v1)
-
-            neighbors_jj, offsets_jj = nl.get_neighbors(neighbors[jj])
-            cells_jj = np.dot(offsets_jj, cell)
-            distance_vectors_jj = positions[neighbors_jj] + cells_jj - positions[neighbors[jj]]
-
-            # iterate over neighbors of jj
-            for kk in np.arange(len(neighbors_jj)):
-                v2 = distance_vectors_jj[kk] # vector from jj to kk
-                r2 = np.linalg.norm(v2)
-                cosT = -np.dot(v1,v2)/(r1*r2)
-
-                # print(ii, jj, neighbors[jj], kk, cosT)
-
-                if np.isclose(cosT, 1.0):
-                    bonds.append([ii, jj, neighbors[jj], kk])
-
-    return bonds
-
-def _get_bonds_V2(atoms, r0, neighborlist=None):
-    natoms = len(atoms)
-
-    nl = neighborlist
-    if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
-        nl.update(atoms)
-
-    bonds = []
-    # iterate over atoms
-    for ii in np.arange(natoms):
-        neighbors, offsets = nl.get_neighbors(ii)
-
-        # iterate over neighbors of ii
-        for jj in np.arange(len(neighbors)):
-            neighbors_jj, offsets_jj = nl.get_neighbors(neighbors[jj])
+            neighbors_jj = neigh_ids[neighbors[jj]]
 
             # iterate over neighbors of jj
             for kk in np.arange(len(neighbors_jj)):
@@ -132,6 +89,7 @@ def _get_bonds_V2(atoms, r0, neighborlist=None):
                     bonds.append([ii, jj, neighbors[jj], kk])
 
     return bonds
+
 
 def _get_phi_energy(phis, atoms, r0, bonds, neighborlist=None):
     natoms = len(atoms)
