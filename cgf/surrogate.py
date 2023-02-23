@@ -144,7 +144,8 @@ class MikadoRR(Calculator):
     default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
                           'rr_incpt': 0.0,
                           'r0': 1.0,
-                          'opt': True}
+                          'opt': True,
+                          'update_linker_sites': True}
     nolabel = True
 
     def __init__(self, **kwargs):
@@ -159,18 +160,23 @@ class MikadoRR(Calculator):
             equilibrium distance in units of [length]
         opt: boolean
             optimize internal DOFs
+        update_linker_sites: boolean
+            updates linker_sites if optimized. Has only an effect if ASE optimizer is used
         """
         Calculator.__init__(self, **kwargs)
 
-        #self.nl = None
+        self._linkersites = None  # variable to save linkersite positions for geometry optimization
 
     def calculate(self, atoms=None, properties=implemented_properties,
                   system_changes=['positions', 'numbers', 'cell',
                                   'pbc']):
-
         Calculator.calculate(self, atoms, properties, system_changes)
-
+        
         self.atoms = find_neighbor_distances(self.atoms)
+        if self.parameters.update_linker_sites:
+            if self._linkersites is not None:
+                self.atoms.set_array('linker_sites', self._linkersites)
+            
         natoms = len(self.atoms)
 
 
@@ -187,11 +193,11 @@ class MikadoRR(Calculator):
                            jac=True,
                            options={'gtol': 1e-3, 'disp': False})
             p = res.x.reshape(p0.shape)
-            # make sure that the distances to the linkage sites do not change
-            for i in range(p.shape[0]):
-                for j in range(p.shape[1]):
-                    p[i,j,:] = p[i,j,:] * (np.linalg.norm(p0[i,j,:])/np.linalg.norm(p[i,j,:]))
+
+            p = _renormalize_linker_lengths(self.atoms, p, p0)
+
             self.atoms.set_array('linker_sites', p)
+            self._linkersites = p
 
         # get descriptors
         bonds = _get_bonds(self.atoms)
@@ -219,11 +225,45 @@ class MikadoRR(Calculator):
 
 ###############################################################################
 
+def _renormalize_linker_lengths(atoms, p, p0):
+    # make sure that the distances to the linkage sites do not change
+    dim = np.sum(atoms.pbc)
+    if dim==2:  # if 2D
+        d = np.where(atoms.pbc==False)[0][0]  # index of out-of-plane dimension
+        p[:,:,d] = p0[:,:,d].copy()
+    else:
+        d = 3
+    if dim==2:
+        p_tmp = np.delete(p, np.s_[d], 2)
+        p0_tmp = np.delete(p0, np.s_[d], 2)
+    else:
+        p_tmp = p.copy()
+        p0_tmp = p0.copy()
+        scaling_factors = []
+    scaling_factors = np.zeros(p.shape[:2])
+    for i in range(p.shape[0]):
+        for j in range(p.shape[1]):
+            scaling_factors[i, j] = (np.linalg.norm(p0_tmp[i,j,:])/np.linalg.norm(p_tmp[i,j,:]))
+
+    for k in range(p.shape[2]):
+        if k==d:
+            continue
+        p[:,:,k] *= scaling_factors
+
+    return p
+
 def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):
     """Get energy and gradient wrt internal DOFs."""
     natoms = len(cg_atoms)    
     p0 = cg_atoms.get_array('linker_sites')
-    cg_atoms.set_array('linker_sites', p.reshape(p0.shape))
+    p = p.reshape(p0.shape)
+
+
+    if np.sum(cg_atoms.pbc)==2:  # if 2D
+        d = np.where(cg_atoms.pbc==False)[0][0]
+        p[:,:,d] = p0[:,:,d].copy()  # make sure that out of plane stays the same
+
+    cg_atoms.set_array('linker_sites', p)
 
     # get descriptors
     bonds = _get_bonds(cg_atoms)
@@ -341,17 +381,17 @@ def _get_bond_descriptors_gradient(bond_params, at_k):
             
             detsq_dotsq = (det_ii/dot_ii)**2
             det_dotsq = (det_ii/dot_ii**2)
-            
-            bond_desc_grad[ib,1,0] = -1/(1+detsq_dotsq) * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  ) # dphi_i_dR_k[0]
-            bond_desc_grad[ib,1,1] = -1/(1+detsq_dotsq) * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  ) # dphi_i_dR_k[1]
-            bond_desc_grad[ib,1,2] = -1/(1+detsq_dotsq) * ( - det_dotsq * v2_ii[2] ) # dphi_i_dR_k[2]
+            k = 1/(1+detsq_dotsq)
+            bond_desc_grad[ib,1,0] = -k * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  ) # dphi_i_dR_k[0]
+            bond_desc_grad[ib,1,1] = -k * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  ) # dphi_i_dR_k[1]
+            bond_desc_grad[ib,1,2] = -k * ( - det_dotsq * v2_ii[2] ) # dphi_i_dR_k[2]
         elif jj == at_k:
             detsq_dotsq = (det_ii/dot_ii)**2
             det_dotsq = (det_ii/dot_ii**2)
-            
-            bond_desc_grad[ib,1,0] =  1/(1+detsq_dotsq) * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  )
-            bond_desc_grad[ib,1,1] =  1/(1+detsq_dotsq) * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  )
-            bond_desc_grad[ib,1,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v2_ii[2] )
+            k = 1/(1+detsq_dotsq)
+            bond_desc_grad[ib,1,0] =  k * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  )
+            bond_desc_grad[ib,1,1] =  k * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  )
+            bond_desc_grad[ib,1,2] =  k * ( - det_dotsq * v2_ii[2] )
 
         # get angle for site jj
         
@@ -363,17 +403,17 @@ def _get_bond_descriptors_gradient(bond_params, at_k):
             
             detsq_dotsq = (det_jj/dot_jj)**2
             det_dotsq = (det_jj/dot_jj**2)
-            
-            bond_desc_grad[ib,2,0] = -1/(1+detsq_dotsq) * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  ) # dphi_j_dR_k[0]
-            bond_desc_grad[ib,2,1] = -1/(1+detsq_dotsq) * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  ) # dphi_j_dR_k[1]
-            bond_desc_grad[ib,2,2] = -1/(1+detsq_dotsq) * ( - det_dotsq * v2_jj[2] ) # dphi_j_dR_k[2]
+            k = 1/(1+detsq_dotsq)
+            bond_desc_grad[ib,2,0] = -k * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  ) # dphi_j_dR_k[0]
+            bond_desc_grad[ib,2,1] = -k * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  ) # dphi_j_dR_k[1]
+            bond_desc_grad[ib,2,2] = -k * ( - det_dotsq * v2_jj[2] ) # dphi_j_dR_k[2]
         elif ii == at_k:
             detsq_dotsq = (det_jj/dot_jj)**2
             det_dotsq = (det_jj/dot_jj**2)
-            
-            bond_desc_grad[ib,2,0] =  1/(1+detsq_dotsq) * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  )
-            bond_desc_grad[ib,2,1] =  1/(1+detsq_dotsq) * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  )
-            bond_desc_grad[ib,2,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v2_jj[2] )
+            k = 1/(1+detsq_dotsq)
+            bond_desc_grad[ib,2,0] =  k * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  )
+            bond_desc_grad[ib,2,1] =  k * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  )
+            bond_desc_grad[ib,2,2] =  k * ( - det_dotsq * v2_jj[2] )
 
     return bond_desc_grad
 
@@ -390,17 +430,19 @@ def _get_bond_descriptors_internal_gradient(cg_atoms, bond_params, at_k, li_k):
         if (at_k==ii) and (li_k==core_linker_neigh[ii,nii]):
             detsq_dotsq = (det_ii/dot_ii)**2
             det_dotsq = (det_ii/dot_ii**2)
-            bond_desc_grad[ib,1,0] =  1/(1+detsq_dotsq) * ( -v1_ii[1]/dot_ii - det_dotsq * v1_ii[0]  ) # dphi_i_dL_ik[0]
-            bond_desc_grad[ib,1,1] =  1/(1+detsq_dotsq) * (  v1_ii[0]/dot_ii - det_dotsq * v1_ii[1]  ) # dphi_i_dL_ik[1]
-            bond_desc_grad[ib,1,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v1_ii[2] ) # dphi_i_dL_ik[2]
+            k = 1/(1+detsq_dotsq)
+            bond_desc_grad[ib,1,0] =  k * ( -v1_ii[1]/dot_ii - det_dotsq * v1_ii[0]  ) # dphi_i_dL_ik[0]
+            bond_desc_grad[ib,1,1] =  k * (  v1_ii[0]/dot_ii - det_dotsq * v1_ii[1]  ) # dphi_i_dL_ik[1]
+            bond_desc_grad[ib,1,2] =  k * ( - det_dotsq * v1_ii[2] ) # dphi_i_dL_ik[2]
 
         # get angle for site jj
         if (at_k==jj) and (li_k==core_linker_neigh[jj,njj]):
             detsq_dotsq = (det_jj/dot_jj)**2
             det_dotsq = (det_jj/dot_jj**2)
-            bond_desc_grad[ib,2,0] =  1/(1+detsq_dotsq) * ( -v1_jj[1]/dot_jj - det_dotsq * v1_jj[0]  ) # dphi_j_dL_ik[0]
-            bond_desc_grad[ib,2,1] =  1/(1+detsq_dotsq) * (  v1_jj[0]/dot_jj - det_dotsq * v1_jj[1]  ) # dphi_j_dL_ik[1]
-            bond_desc_grad[ib,2,2] =  1/(1+detsq_dotsq) * ( - det_dotsq * v1_jj[2] ) # dphi_j_dL_ik[2]
+            k = 1/(1+detsq_dotsq)
+            bond_desc_grad[ib,2,0] =  k * ( -v1_jj[1]/dot_jj - det_dotsq * v1_jj[0]  ) # dphi_j_dL_ik[0]
+            bond_desc_grad[ib,2,1] =  k * (  v1_jj[0]/dot_jj - det_dotsq * v1_jj[1]  ) # dphi_j_dL_ik[1]
+            bond_desc_grad[ib,2,2] =  k * ( - det_dotsq * v1_jj[2] ) # dphi_j_dL_ik[2]
                 
     return bond_desc_grad
 

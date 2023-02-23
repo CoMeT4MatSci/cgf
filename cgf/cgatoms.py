@@ -234,7 +234,7 @@ def write_cgatoms(cg_atoms, fname):
     
     """
     
-    cga_dict = {'positions': cg_atoms.positions, 'numbers': cg_atoms.numbers, 'cell': cg_atoms.cell.array,
+    cga_dict = {'positions': cg_atoms.positions, 'numbers': cg_atoms.numbers, 'cell': cg_atoms.cell.array, 'pbc': cg_atoms.pbc,
                 'linker_sites': cg_atoms.get_array('linker_sites'),
                 'linker_neighbors': cg_atoms.get_array('linker_neighbors'),
                 'neighbor_ids': cg_atoms.get_array('neighbor_ids'),
@@ -256,8 +256,8 @@ def read_cgatoms(fname):
         data = json.load(jfile)
     data = json.loads(data)
     
-    std_keys = ['numbers', 'positions', 'cell']
-    cg_atoms = Atoms(numbers=data['numbers'], positions=data['positions'], cell=np.array(data['cell']), pbc=True) # create coarse-grained representation based on core centers
+    std_keys = ['numbers', 'positions', 'cell', 'pbc']
+    cg_atoms = Atoms(numbers=data['numbers'], positions=data['positions'], cell=np.array(data['cell']), pbc=np.array(data['pbc'])) # create coarse-grained representation based on core centers
     
     
     for k in data.keys():
