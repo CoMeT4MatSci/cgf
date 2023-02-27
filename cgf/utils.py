@@ -1,4 +1,5 @@
 from ase import Atoms
+import numpy as np
 
 def remove_hatoms(s):
     del s[[atom.symbol == 'H' for atom in s]]
@@ -110,3 +111,77 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
         plt.savefig(savefigname, dpi=300)     
 
     return fig, ax
+
+
+def geom_optimize(cg_atoms, calculator, trajectory=None):
+    from ase.constraints import FixedPlane
+    from ase.optimize import BFGS
+    r0=35.082756/np.sqrt(3)
+
+    cg_atoms.calc = calculator
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms.set_constraint(c)
+
+    dyn = BFGS(cg_atoms, trajectory=trajectory)
+    dyn.run(fmax=0.01)
+    cg_atoms_o = cg_atoms.calc.get_atoms()
+
+    return cg_atoms_o
+
+def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
+    from ase.constraints import FixedPlane
+    from ase.optimize import BFGS
+    from cgf.surrogate import MikadoRR
+
+
+    calc = MikadoRR(**calculator.todict())
+    cg_atoms.calc = calc
+
+    ### first: only optimize linker_sites
+    cg_atoms.calc.parameters.opt = True
+    cg_atoms.get_potential_energy()
+    cg_atoms_o_ls = cg_atoms.calc.get_atoms()
+    
+
+    ### second: optimize geometry without optimizing linker sites
+    calc = MikadoRR(**calculator.todict())
+    cg_atoms_o_ls.calc = calc
+    cg_atoms_o_ls.calc.parameters.opt = False
+    
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms_o_ls],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms_o_ls.set_constraint(c)
+
+    dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory)
+    dyn.run(fmax=0.01)
+    cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
+
+    ### thrid: optimize geometry and optimize linker sites
+    calc = MikadoRR(**calculator.todict())
+    cg_atoms_o_pos.calc = calc
+    cg_atoms_o_pos.calc.parameters.opt = True
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms_o_pos],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms_o_pos.set_constraint(c)
+
+    dyn = BFGS(cg_atoms_o_pos, trajectory=trajectory)
+    dyn.run(fmax=0.01)
+    cg_atoms_o = cg_atoms_o_pos.calc.get_atoms()
+
+    return cg_atoms_o

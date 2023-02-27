@@ -35,7 +35,7 @@ def collect_descriptors(structures, cy, mfs, r0):
         #_find_linker_neighbor(cg_atoms, r0, neighborlist=nl)
 
         bonds = _get_bonds(cg_atoms)
-        bond_desc = _get_bond_descriptors(cg_atoms, bonds)
+        bond_desc, bond_params, bond_ref = _get_bond_descriptors(cg_atoms, bonds)
         bond_descriptors.append(bond_desc)
 
         core_desc = _get_core_descriptors(cg_atoms)
@@ -98,33 +98,34 @@ def get_feature_gradient(core_descriptors, bond_descriptors, core_descriptors_gr
 def get_feature_internal_gradient(core_descriptors, bond_descriptors, core_descriptors_int_grad, bond_descriptors_int_grad):
 
     # bonds
-    bond_desc = np.array(bond_descriptors)
-    bond_desc_grad = np.array(bond_descriptors_int_grad)
     
-    lenghts = bond_desc[:,0]
-    psi0 = bond_desc[:,1]
-    psi1 = bond_desc[:,2]
+    #lenghts = bond_desc[:,0]
+    psi0 = bond_descriptors[:,1]
+    psi1 = bond_descriptors[:,2]
 
 #    dlenghts_dRk = bond_desc_grad[:,0,:]
-    dpsi0_dL = bond_desc_grad[:,1,:]
-    dpsi1_dL = bond_desc_grad[:,2,:]
+    dpsi0_dL = bond_descriptors_int_grad[:,1,:]
+    dpsi1_dL = bond_descriptors_int_grad[:,2,:]
     
     # cores
-    core_desc = np.array(core_descriptors)
-    core_desc_grad = np.array(core_descriptors_int_grad)    
-    dphi0 = core_desc[:,0] - np.sign(core_desc[:,0])*2*np.pi/core_desc.shape[1]
-    dphi1 = core_desc[:,1] - np.sign(core_desc[:,1])*2*np.pi/core_desc.shape[1]
-    dphi2 = core_desc[:,2] - np.sign(core_desc[:,2])*2*np.pi/core_desc.shape[1]
-    dphi0_dL = core_desc_grad[:,0,:]
-    dphi1_dL = core_desc_grad[:,1,:]
-    dphi2_dL = core_desc_grad[:,2,:]
+
+    f = 2*np.pi/core_descriptors.shape[1]
+    dphi0 = core_descriptors[:,0] - np.sign(core_descriptors[:,0]) * f
+    dphi1 = core_descriptors[:,1] - np.sign(core_descriptors[:,1]) * f
+    dphi2 = core_descriptors[:,2] - np.sign(core_descriptors[:,2]) * f
+    dphi0_dL = core_descriptors_int_grad[:,0,:]
+    dphi1_dL = core_descriptors_int_grad[:,1,:]
+    dphi2_dL = core_descriptors_int_grad[:,2,:]
 
     # feature gradients matrix
-    X = np.array([np.zeros((3,)), np.zeros((3,)), 
-                  2*(psi0 @ dpsi0_dL) , (psi0 @ dpsi1_dL + psi1 @ dpsi0_dL), 2*(psi1 @ dpsi1_dL), 
-                  2*(dphi0 @ dphi0_dL + dphi1 @ dphi1_dL + dphi2 @ dphi2_dL)]).T
+    fg1 = 2*(psi0 @ dpsi0_dL)
+    fg2 = (psi0 @ dpsi1_dL + psi1 @ dpsi0_dL)
+    fg3 = 2*(psi1 @ dpsi1_dL)
+    fg4 = 2*(dphi0 @ dphi0_dL + dphi1 @ dphi1_dL + dphi2 @ dphi2_dL)
 
+    X = np.array([np.zeros((3,)), np.zeros((3,)), fg1 , fg2, fg3, fg4]).T
     return X
+
 
 ###############################################################################
 # CALCULATOR V2
@@ -184,9 +185,9 @@ class MikadoRR(Calculator):
         rr_coeff = self.parameters.rr_coeff
         rr_incpt = self.parameters.rr_incpt
         r0 = self.parameters.r0
-        opt = self.parameters.opt
+        #opt = self.parameters.opt
 
-        if opt:
+        if self.parameters.opt:
             p0 = self.atoms.get_array('linker_sites')
             res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, rr_coeff, rr_incpt), 
                            method='BFGS', 
@@ -201,7 +202,7 @@ class MikadoRR(Calculator):
 
         # get descriptors
         bonds = _get_bonds(self.atoms)
-        bond_desc, bond_params = _get_bond_descriptors(self.atoms, bonds)
+        bond_desc, bond_params, bond_ref = _get_bond_descriptors(self.atoms, bonds)
         bond_descriptors = [bond_desc,]
 
         core_desc = _get_core_descriptors(self.atoms)
@@ -219,7 +220,7 @@ class MikadoRR(Calculator):
             forces = np.zeros((natoms, 3)) # natoms, ndirections
             for at in range(natoms):
                 forces[at,:] = -rr_coeff @ get_feature_gradient(core_desc, bond_desc,
-                                                None, _get_bond_descriptors_gradient(bond_params, at)).T
+                                                None, _get_bond_descriptors_gradient(bond_params, bond_ref, at)).T
             self.results['forces'] = forces
 
 
@@ -267,7 +268,7 @@ def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):
 
     # get descriptors
     bonds = _get_bonds(cg_atoms)
-    bond_desc, bond_params = _get_bond_descriptors(cg_atoms, bonds)
+    bond_desc, bond_params, bond_ref = _get_bond_descriptors(cg_atoms, bonds)
     bond_descriptors = [bond_desc,]
 
     core_desc = _get_core_descriptors(cg_atoms)
@@ -285,7 +286,7 @@ def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):
         int_gradient[at*3 + li,:] = rr_coeff @ get_feature_internal_gradient(core_desc, 
                                                                 bond_desc, 
                                 _get_core_descriptors_internal_gradient(cg_atoms, at, li),
-                                _get_bond_descriptors_internal_gradient(cg_atoms, bond_params, at, li)).T
+                                _get_bond_descriptors_internal_gradient(cg_atoms, bond_params, bond_ref, at, li)).T
     
     return energy, int_gradient.reshape(-1)
 
@@ -315,7 +316,6 @@ def _get_core_descriptors(cg_atoms):
                 iangle += 1
     return core_desc
 
-#@nb.njit(fastmath=True,parallel=True)
 def calc_rs_dot_det_phi(v1, v2):
 
     r1 = np.linalg.norm(v1)    
@@ -335,6 +335,15 @@ def _get_bond_descriptors(cg_atoms, bonds):
 
     bond_desc = np.zeros((len(bonds), 3))
     bond_params = []
+
+    bond_ref = dict()  # references which bond_ids (ib) belong to which atoms (ii and jj)
+    bond_ref['ii'] = dict()
+    bond_ref['jj'] = dict()
+    for ii in range(len(cg_atoms)):
+        bond_ref['ii'][ii] = []
+        bond_ref['jj'][ii] = []
+
+
     for ib, b in enumerate(bonds):
         ii, nii, jj, njj = b[0], b[1], b[2], b[3]
 
@@ -359,15 +368,20 @@ def _get_bond_descriptors(cg_atoms, bonds):
         bond_desc[ib, 2] = phi_jj
         bond_params.append([[ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii], 
                             [jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj]])
+        bond_ref['ii'][ii].append(ib)
+        bond_ref['jj'][jj].append(ib)
+    return bond_desc, bond_params, bond_ref
 
-    return bond_desc, bond_params
+def _get_bond_descriptors_gradient(bond_params, bond_ref, at_k):
 
-def _get_bond_descriptors_gradient(bond_params, at_k):
 
+    ib1 = bond_ref['ii'][at_k]
+    ib2 = bond_ref['jj'][at_k]
+    ibs = ib1 + (ib2)
     bond_desc_grad = np.zeros((len(bond_params),3,3))
-    for ib, bp in enumerate(bond_params):
-        ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii = bp[0]
-        jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj = bp[1]
+    for ib in ibs:
+        ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii = bond_params[ib][0]
+        jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj = bond_params[ib][1]
 
         # r1 = sqrt(v1.v1), hence grad r1 = v1/r1. Here, v1 = R_jj - R_ii
 
@@ -379,18 +393,20 @@ def _get_bond_descriptors_gradient(bond_params, at_k):
         if ii == at_k:
             bond_desc_grad[ib,0,:] = -1/r1_ii * v1_ii[:] # dr1_dR_k[:]            
             
-            detsq_dotsq = (det_ii/dot_ii)**2
-            det_dotsq = (det_ii/dot_ii**2)
+            div_dot_ii = 1/dot_ii
+            detsq_dotsq = (det_ii*div_dot_ii)**2
+            det_dotsq = (det_ii*div_dot_ii**2)
             k = 1/(1+detsq_dotsq)
-            bond_desc_grad[ib,1,0] = -k * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  ) # dphi_i_dR_k[0]
-            bond_desc_grad[ib,1,1] = -k * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  ) # dphi_i_dR_k[1]
+            bond_desc_grad[ib,1,0] = -k * (  v2_ii[1]*div_dot_ii - det_dotsq * v2_ii[0]  ) # dphi_i_dR_k[0]
+            bond_desc_grad[ib,1,1] = -k * ( -v2_ii[0]*div_dot_ii - det_dotsq * v2_ii[1]  ) # dphi_i_dR_k[1]
             bond_desc_grad[ib,1,2] = -k * ( - det_dotsq * v2_ii[2] ) # dphi_i_dR_k[2]
         elif jj == at_k:
-            detsq_dotsq = (det_ii/dot_ii)**2
-            det_dotsq = (det_ii/dot_ii**2)
+            div_dot_ii = 1/dot_ii
+            detsq_dotsq = (det_ii*div_dot_ii)**2
+            det_dotsq = (det_ii*div_dot_ii**2)
             k = 1/(1+detsq_dotsq)
-            bond_desc_grad[ib,1,0] =  k * (  v2_ii[1]/dot_ii - det_dotsq * v2_ii[0]  )
-            bond_desc_grad[ib,1,1] =  k * ( -v2_ii[0]/dot_ii - det_dotsq * v2_ii[1]  )
+            bond_desc_grad[ib,1,0] =  k * (  v2_ii[1]*div_dot_ii - det_dotsq * v2_ii[0]  )
+            bond_desc_grad[ib,1,1] =  k * ( -v2_ii[0]*div_dot_ii - det_dotsq * v2_ii[1]  )
             bond_desc_grad[ib,1,2] =  k * ( - det_dotsq * v2_ii[2] )
 
         # get angle for site jj
@@ -401,47 +417,55 @@ def _get_bond_descriptors_gradient(bond_params, at_k):
         if jj == at_k:
             bond_desc_grad[ib,0,:] = 1/r1_ii * v1_ii[:] # dr1_dR_k[:]
             
-            detsq_dotsq = (det_jj/dot_jj)**2
-            det_dotsq = (det_jj/dot_jj**2)
+            div_dot_jj = 1/dot_jj
+            detsq_dotsq = (det_jj*div_dot_jj)**2
+            det_dotsq = (det_jj*div_dot_jj**2)
             k = 1/(1+detsq_dotsq)
-            bond_desc_grad[ib,2,0] = -k * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  ) # dphi_j_dR_k[0]
-            bond_desc_grad[ib,2,1] = -k * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  ) # dphi_j_dR_k[1]
+            bond_desc_grad[ib,2,0] = -k * (  v2_jj[1]*div_dot_jj - det_dotsq * v2_jj[0]  ) # dphi_j_dR_k[0]
+            bond_desc_grad[ib,2,1] = -k * ( -v2_jj[0]*div_dot_jj - det_dotsq * v2_jj[1]  ) # dphi_j_dR_k[1]
             bond_desc_grad[ib,2,2] = -k * ( - det_dotsq * v2_jj[2] ) # dphi_j_dR_k[2]
         elif ii == at_k:
-            detsq_dotsq = (det_jj/dot_jj)**2
-            det_dotsq = (det_jj/dot_jj**2)
+            div_dot_jj = 1/dot_jj
+            detsq_dotsq = (det_jj*div_dot_jj)**2
+            det_dotsq = (det_jj*div_dot_jj**2)
             k = 1/(1+detsq_dotsq)
-            bond_desc_grad[ib,2,0] =  k * (  v2_jj[1]/dot_jj - det_dotsq * v2_jj[0]  )
-            bond_desc_grad[ib,2,1] =  k * ( -v2_jj[0]/dot_jj - det_dotsq * v2_jj[1]  )
+            bond_desc_grad[ib,2,0] =  k * (  v2_jj[1]*div_dot_jj - det_dotsq * v2_jj[0]  )
+            bond_desc_grad[ib,2,1] =  k * ( -v2_jj[0]*div_dot_jj - det_dotsq * v2_jj[1]  )
             bond_desc_grad[ib,2,2] =  k * ( - det_dotsq * v2_jj[2] )
 
     return bond_desc_grad
 
-def _get_bond_descriptors_internal_gradient(cg_atoms, bond_params, at_k, li_k):
+def _get_bond_descriptors_internal_gradient(cg_atoms, bond_params, bond_ref, at_k, li_k):
 
     core_linker_neigh = cg_atoms.get_array('linker_neighbors')
 
+    ib1 = bond_ref['ii'][at_k]
+    ib2 = bond_ref['jj'][at_k]
+    ibs = ib1 + (ib2)
     bond_desc_grad = np.zeros((len(bond_params),3,3))
-    for ib, bp in enumerate(bond_params):
-        ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii = bp[0]
-        jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj = bp[1]
+    #for ib, bp in enumerate(bond_params):
+    for ib in ibs:
+        ii, v1_ii, v2_ii, r1_ii, r2_ii, dot_ii, det_ii, phi_ii, nii = bond_params[ib][0]
+        jj, v1_jj, v2_jj, r1_jj, r2_jj, det_jj, dot_jj, phi_jj, njj = bond_params[ib][1]
 
         # get angle for site ii
         if (at_k==ii) and (li_k==core_linker_neigh[ii,nii]):
-            detsq_dotsq = (det_ii/dot_ii)**2
-            det_dotsq = (det_ii/dot_ii**2)
+            div_dot_ii = 1/dot_ii
+            detsq_dotsq = (det_ii*div_dot_ii)**2
+            det_dotsq = (det_ii*div_dot_ii**2)
             k = 1/(1+detsq_dotsq)
-            bond_desc_grad[ib,1,0] =  k * ( -v1_ii[1]/dot_ii - det_dotsq * v1_ii[0]  ) # dphi_i_dL_ik[0]
-            bond_desc_grad[ib,1,1] =  k * (  v1_ii[0]/dot_ii - det_dotsq * v1_ii[1]  ) # dphi_i_dL_ik[1]
+            bond_desc_grad[ib,1,0] =  k * ( -v1_ii[1]*div_dot_ii - det_dotsq * v1_ii[0]  ) # dphi_i_dL_ik[0]
+            bond_desc_grad[ib,1,1] =  k * (  v1_ii[0]*div_dot_ii - det_dotsq * v1_ii[1]  ) # dphi_i_dL_ik[1]
             bond_desc_grad[ib,1,2] =  k * ( - det_dotsq * v1_ii[2] ) # dphi_i_dL_ik[2]
 
         # get angle for site jj
         if (at_k==jj) and (li_k==core_linker_neigh[jj,njj]):
-            detsq_dotsq = (det_jj/dot_jj)**2
-            det_dotsq = (det_jj/dot_jj**2)
+            div_dot_jj = 1/dot_jj
+            detsq_dotsq = (det_jj*div_dot_jj)**2
+            det_dotsq = (det_jj*div_dot_jj**2)
             k = 1/(1+detsq_dotsq)
-            bond_desc_grad[ib,2,0] =  k * ( -v1_jj[1]/dot_jj - det_dotsq * v1_jj[0]  ) # dphi_j_dL_ik[0]
-            bond_desc_grad[ib,2,1] =  k * (  v1_jj[0]/dot_jj - det_dotsq * v1_jj[1]  ) # dphi_j_dL_ik[1]
+            bond_desc_grad[ib,2,0] =  k * ( -v1_jj[1]*div_dot_jj - det_dotsq * v1_jj[0]  ) # dphi_j_dL_ik[0]
+            bond_desc_grad[ib,2,1] =  k * (  v1_jj[0]*div_dot_jj - det_dotsq * v1_jj[1]  ) # dphi_j_dL_ik[1]
             bond_desc_grad[ib,2,2] =  k * ( - det_dotsq * v1_jj[2] ) # dphi_j_dL_ik[2]
                 
     return bond_desc_grad
@@ -466,17 +490,27 @@ def _get_core_descriptors_internal_gradient(cg_atoms, at_k, li_k):
                 dot = np.dot(v1,v2)
                 det = v1[0]*v2[1] - v1[1]*v2[0] #= np.cross(v1,v2)[2]
 
-                core_desc_grad[ii, iangle, 0] =  1/(1+(det/dot)**2) * (  v2[1]/dot - (det/dot**2) * v2[0]  ) # dangle_dL[0]
-                core_desc_grad[ii, iangle, 1] =  1/(1+(det/dot)**2) * ( -v2[0]/dot - (det/dot**2) * v2[1]  ) # dangle_dL[1]
-                core_desc_grad[ii, iangle, 2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v2[2] ) # dangle_dL[2]
+                div_dot = 1/dot
+                detsq_dotsq = (det * div_dot)**2
+                det_dotsq = (det*div_dot**2)
+                k = 1/(1+detsq_dotsq)
+
+                core_desc_grad[ii, iangle, 0] =  k * (  v2[1]*div_dot - det_dotsq * v2[0]  ) # dangle_dL[0]
+                core_desc_grad[ii, iangle, 1] =  k * ( -v2[0]*div_dot - det_dotsq * v2[1]  ) # dangle_dL[1]
+                core_desc_grad[ii, iangle, 2] =  k * ( - det_dotsq * v2[2] ) # dangle_dL[2]
 
             elif (ii==at_k) and (lj==li_k):
                 dot = np.dot(v1,v2)
                 det = v1[0]*v2[1] - v1[1]*v2[0] #= np.cross(v1,v2)[2]
 
-                core_desc_grad[ii, iangle, 0] =  1/(1+(det/dot)**2) * ( -v1[1]/dot - (det/dot**2) * v1[0]  )
-                core_desc_grad[ii, iangle, 1] =  1/(1+(det/dot)**2) * (  v1[0]/dot - (det/dot**2) * v1[1]  )
-                core_desc_grad[ii, iangle, 2] =  1/(1+(det/dot)**2) * ( - (det/dot**2) * v1[2] )
+                div_dot = 1/dot
+                detsq_dotsq = (det * div_dot)**2
+                det_dotsq = (det*div_dot**2)
+                k = 1/(1+detsq_dotsq)
+
+                core_desc_grad[ii, iangle, 0] =  k * ( -v1[1]*div_dot - det_dotsq * v1[0]  )
+                core_desc_grad[ii, iangle, 1] =  k * (  v1[0]*div_dot - det_dotsq * v1[1]  )
+                core_desc_grad[ii, iangle, 2] =  k * ( - det_dotsq * v1[2] )
 
             iangle += 1
     
