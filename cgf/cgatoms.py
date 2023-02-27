@@ -2,6 +2,8 @@ import numpy as np
 
 from ase import Atoms
 from ase.neighborlist import NeighborList, mic
+from scipy.optimize import minimize
+
 
 ###############################################################################
 import json
@@ -51,7 +53,6 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
                     break
         core_linker_neigh.append(linker_neigh)
         neigh_dist_vec.append(dist_vec)
-    print('neigh_dist_vec', neigh_dist_vec[0])
     cg_atoms.set_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor
     return np.array(neigh_dist_vec)
 
@@ -121,7 +122,7 @@ def find_neighbor_distances(cg_atoms):
 
     return cg_atoms
 
-def find_linker_sites_guess(cg_atoms, linkage_length):
+def find_linker_sites_guess_nneighbors(cg_atoms, linkage_length):
     """
     Makes an initial guess for 'linker_sites' 
     based on variable linkage_length and the direction towards the nearest neighbor.
@@ -132,7 +133,7 @@ def find_linker_sites_guess(cg_atoms, linkage_length):
     cg_atoms: ASE atoms object with core positions and cell
     
     Returns:
-    ASE atoms object with set array 'neighbor_distances' array
+    ASE atoms object with set array 'linker_sites' array
     """
 
     natoms = len(cg_atoms)
@@ -152,6 +153,86 @@ def find_linker_sites_guess(cg_atoms, linkage_length):
         core_linker_dir.append(linker_dir)
 
     cg_atoms.set_array('linker_sites', np.array(core_linker_dir)) # add positions of linker sites relative to core center
+
+    return cg_atoms
+
+def find_linker_sites_guess_best_angles(cg_atoms, linkage_length):
+    """
+    Makes an initial guess for 'linker_sites' 
+    Based on fixed linkage_length and rigid equiangular linker_sites.
+    Calculates angles of rigid linker_sites which minimizes the sum of 
+        squares of angles to the respective vectors to the nearest neighbors.
+
+    cg_atoms must have already 'neighbor_ids' and 'neighbor_distances'
+    
+    Input:
+    cg_atoms: ASE atoms object with core positions and cell
+    
+    Returns:
+    ASE atoms object with set array 'linker_sites' array
+    """
+
+    def rot_matrix(angle):
+        '''Rotation by angle around z-axis'''
+        rot = np.array([[np.cos(angle), -np.sin(angle), 0], 
+                        [np.sin(angle), np.cos(angle), 0], 
+                        [0., 0., 1.]], dtype=float)
+        return rot
+
+    def get_angle_sum(phi_0, v1s, linker_sites_tmp):
+        """
+        Rotates linker_sites by phi_0 and calculates the sum of squares
+        of angles to the respective vectors to the nearest neighbors v1s"""
+
+        # rotate vectors by phi_0
+        ls_new = []
+        for ls in linker_sites_tmp:
+            ls_new.append(rot_matrix(phi_0) @ ls)
+
+        # calculate square sum of angles to respecitve vector to NN
+        phi_sqsum = 0
+        for jj, lsn in enumerate(ls_new):
+            dot = np.dot(v1s[jj], lsn)
+            det = np.cross(v1s[jj], lsn)[2]
+            phi_sqsum += (np.arctan2(det, dot))**2
+        return phi_sqsum
+
+    natoms = len(cg_atoms)
+    neigh_ids = cg_atoms.get_array('neighbor_ids')
+    neigh_dist_vec = cg_atoms.get_array('neighbor_distances')
+    
+    core_linker_dir = []
+    for ii in range(natoms):
+        neighbors = neigh_ids[ii]
+
+        linker_dir_tmp = []
+        v1 = neigh_dist_vec[ii][0]
+        phi_0 = np.arctan2(v1[1], v1[0])  # absolute orientation
+        phi_diff = 2*np.pi/len(neighbors)  # angle between linker_sites
+        for jj in range(len(neighbors)):
+            if jj==0:
+                v1 = neigh_dist_vec[ii][jj]  # vector from ii to jj
+                r1 = np.linalg.norm(v1)
+                linkersite = linkage_length * v1/r1  # first linker site
+                linker_dir_tmp.append(linkersite)
+            else:              
+                linker_dir_tmp.append(rot_matrix(jj*phi_diff) @ linkersite)  # rotate other linkers by phi_diff*jj
+
+        linker_dir_tmp = np.array(linker_dir_tmp)
+        
+        # minimize sum of squares of angles for specific cg site
+        res = minimize(get_angle_sum, phi_0, args=(neigh_dist_vec[ii], linker_dir_tmp), 
+               method='BFGS')
+        phi_0_new = res.x
+        
+        # apply new angle
+        linker_dir = []
+        for ls in linker_dir_tmp:
+           linker_dir.append(rot_matrix(phi_0_new) @ ls)
+        
+        core_linker_dir.append(linker_dir)
+
+    cg_atoms.set_array('linker_sites', np.array(core_linker_dir, dtype=np.float))  # add positions of linker sites relative to core center
 
     return cg_atoms
 
@@ -203,15 +284,16 @@ def find_linker_neighbors(cg_atoms):
     
     return cg_atoms
 
-def init_cgatoms(cg_atoms, linkage_length, r0):
+def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors'):
     """
-    Initialize a CG ase Atoms object. Makes an initial guess for 'linker_sites' 
-    based on variable linkage_length and the direction towards the nearest neighbor
+    Initialize a CG ase Atoms object. Makes an initial guess for 'linker_sites'.
     
     Input:
     cg_atoms: ASE atoms object with core positions and cell
     linkage_length: distance of linkage site from center of core
     r0: cutoff-radius used for finding nearest neighbor cores
+    linker_sites: Either "nneighbors" (based on vectors towards nearest neighbors)
+                    or "best_angles" (based on rotation of rigid equiangularly spaced linker_sites)
     
     Returns:
     ASE atoms object with additional arrays 'linker_sites', 'neighbor_distances', 'neighbor_ids' and 'linker_neighbors' which are used in CG Models
@@ -219,7 +301,12 @@ def init_cgatoms(cg_atoms, linkage_length, r0):
 
     cg_atoms = find_topology(cg_atoms, r0)  # setting 'neighbor_ids'
     cg_atoms = find_neighbor_distances(cg_atoms)  # setting 'neighbor_distances'
-    cg_atoms = find_linker_sites_guess(cg_atoms, linkage_length)  # setting 'linker_sites'
+    if linker_sites=='nneighbors':
+        cg_atoms = find_linker_sites_guess_nneighbors(cg_atoms, linkage_length)  # setting 'linker_sites'
+    elif linker_sites=='best_angles':
+        cg_atoms = find_linker_sites_guess_best_angles(cg_atoms, linkage_length)  # setting 'linker_sites'
+    else:
+        assert 'Wrong linker_sites argument. Either "nneighbors" or "best_angles".'
     cg_atoms = find_linker_neighbors(cg_atoms)  # setting 'linker_neighbors'
     
     return cg_atoms
