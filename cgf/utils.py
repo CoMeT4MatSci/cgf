@@ -46,7 +46,12 @@ def mol2Atoms(mol, repr='2D'):
 
     return Atoms(positions=pos, numbers=nums)
 
-def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
+def plot_cgatoms(cg_atoms, fig=None, ax=None,
+                plot_beam=True, 
+                plot_linker_sites=True,
+                plot_neighbor_connections=False,
+                plot_cell=True,
+                savefigname=None):
     """Plots the positions of the cg_atoms, their orientation and the bonds
 
     Args:
@@ -59,6 +64,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
         fig, ax
     """
     import matplotlib.pyplot as plt
+    from cgf.redecorate import w
 
     natoms = len(cg_atoms)
     cell = cg_atoms.cell
@@ -74,43 +80,69 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
     if not ax:
         ax = fig.add_subplot(111, aspect='equal')
 
-    ax.scatter(positions[:,0],positions[:,1], color='coral', marker='o', s=75, zorder=10)
+    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=75, zorder=10)
 
-    colors = ['red', 'green', 'purple']
-    #for i in range(core_linker_dir.shape[0]):
-    #    for li in range(core_linker_dir.shape[1]):
-    #        ax.arrow(positions[i,0],positions[i,1], core_linker_dir[i,li,0], core_linker_dir[i,li,1], 
-    #        color=colors[core_linker_neigh[i][li]], head_width=0.9, head_length=0.5, zorder=10)
-    ns = []
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
-        ns.append(ii)
         for jj in range(len(neighbors)):
-            if neighbors[jj] in ns:
-                linestyle = ':'
-            else:
-                linestyle='--'
 
             cln = core_linker_neigh[ii][jj]
-            #ax.plot([positions[ii][0]+core_linker_dir[ii,cln,0], positions[neighbors[jj]][0]],
-            #        [positions[ii][1]+core_linker_dir[ii,cln,1], positions[neighbors[jj]][1]],
-            #        color=colors[jj], linestyle=linestyle, linewidth=3, alpha=0.5)
-            ax.arrow(positions[ii][0]+core_linker_dir[ii,cln,0], positions[ii][1]+core_linker_dir[ii,cln,1],
-                    neigh_dist_vec[ii][jj][0]-core_linker_dir[ii,cln,0], neigh_dist_vec[ii][jj][1]-core_linker_dir[ii,cln,1],
-                    color=colors[jj], linestyle=linestyle, linewidth=3, alpha=0.5,
-                    head_width=0.9, head_length=0.5, zorder=10)
+            v1_ii = neigh_dist_vec[ii][jj]  # vec from ii to neighbor nii
+            v2_ii = core_linker_dir[ii][cln]  # linker_site vec
+            dot = np.dot(v1_ii,v2_ii)
+            det = np.cross(v1_ii,v2_ii)[2]
+            phi_ii = np.arctan2(det, dot)
 
-            ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
-            color=colors[jj], head_width=0.9, head_length=0.5, zorder=10)
-            
-            #ax.annotate(str(neighbors[jj])+"-"+str(jj), [positions[ii][0]+neigh_dist_vec[ii][jj][0]*2/3, positions[ii][1]+neigh_dist_vec[ii][jj][1]*2/3])
-            #ax.annotate(str(jj), [positions[ii][0]+core_linker_dir[ii,cln,0], positions[ii][1]+core_linker_dir[ii,cln,1]])
+            n_ii = neigh_ids[ii][jj]
+            neighbors_nii = neigh_ids[n_ii]
+            for kk in range(len(neighbors_nii)):
+                if neighbors_nii[kk]==ii:
+                    cln_nii = core_linker_neigh[n_ii][kk]
+                        
+            v1_nii = -1.*v1_ii  # vec from neighbor nii to ii
+            v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec
+            dot = np.dot(v1_nii,v2_nii)
+            det = np.cross(v1_nii,v2_nii)[2]
+            phi_nii = np.arctan2(det, dot)
+
+
+            xs = np.linspace(positions[ii][0],
+                            (positions[ii][0] + v1_ii[0])   ,
+                                30)
+            ys = np.linspace(positions[ii][1],
+                            (positions[ii][1] + v1_ii[1]),
+                                30)
+
+            norm = np.linalg.norm(v1_ii)  # norm of vector between cg sites
+            normal = np.cross(np.array([0,0,1.]), v1_ii)  # normal vector
+            xnew = []; ynew = []
+            for x, y in zip(xs, ys):
+                lens = np.sqrt((xs[0]-x)**2 + (ys[0]-y)**2)
+                disp_vec = normal * w(lens/norm, phi_ii, phi_nii)
+                xnew.append(x+disp_vec[0])
+                ynew.append(y+disp_vec[1])
+            if plot_beam:
+                ax.plot(xnew, ynew,
+                        color='lightsteelblue', linewidth=10, zorder=-1)
+
+            if plot_neighbor_connections:
+                ax.plot(xs,ys, color='blue', zorder=5)
+            if plot_linker_sites:
+                ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
+            color='darkblue', head_width=0.9, head_length=0.5, lw=2, zorder=10)
+
+    if plot_cell:  # simulation cell
+        ax.plot([0., cell.array[0,0]], [0., cell.array[0,1]], color='grey')
+        ax.plot([0., cell.array[1,0]], [0., cell.array[1,1]], color='grey')
+        ax.plot([cell.array[1,0], cell.array[1,0] + cell.array[0,0]], [cell.array[1,1], cell.array[1,1] + cell.array[0,1]], color='grey')
+        ax.plot([cell.array[0,0], cell.array[1,0] + cell.array[0,0]], [cell.array[0,1], cell.array[1,1] + cell.array[0,1]], color='grey')
 
     plt.tight_layout()
     if savefigname:
         plt.savefig(savefigname, dpi=300)     
 
     return fig, ax
+
 
 
 def geom_optimize(cg_atoms, calculator, trajectory=None):
