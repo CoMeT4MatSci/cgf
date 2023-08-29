@@ -52,7 +52,8 @@ def find_cycles(s, max_cycle_len=6):
     print('--- start  graph construction ...')
     start = timer()    
     AC = get_AC(s, covalent_factor=1.3)    
-    G = nx.from_numpy_matrix(AC)
+    #G = nx.from_numpy_matrix(AC)
+    G = nx.from_numpy_array(AC)  # necessary for networkx>3.0
     end = timer()
     print('--- finished (%4.1f s).' % (end-start))
 
