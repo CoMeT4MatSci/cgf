@@ -95,19 +95,12 @@ def find_topology(cg_atoms, r0):
             neigh_id.append(neighbors[jj])
             dist_vec.append(distance_vectors[jj])  # vector from ii to jj
 
-        if len(neigh_id)!=3:
-            from ase import Atoms
-            atoms = cg_atoms.copy()
-            atoms.write('Problematic_cgatoms.gen')
-        assert len(neigh_id)==3, f"Houston we've got a problem: atom id {ii} with neighbor atomic ids {neighbors} \n with distances {np.linalg.norm(np.array(dist_vec), axis=1)} and cutoff r0 {1.2*r0/2}"
-
         neigh_ids.append(neigh_id)
         neigh_dist_vec.append(dist_vec)
     cg_atoms.set_array('neighbor_ids', np.array(neigh_ids))
     cg_atoms.set_array('neighbor_distances', np.array(neigh_dist_vec)) # distance from each cg_atom to its neighbors
 
     return cg_atoms
-
 
 def find_neighbor_distances(cg_atoms):
     """
@@ -262,14 +255,13 @@ def find_linker_sites_guess_best_angles(cg_atoms, linkage_length):
 def find_linker_neighbors(cg_atoms):
     """
     Updates the topology of cg_atoms, meaning the 'linker_neighbors' and 
-    'neighbor_ids' arrays of cg_atom
     cg_atoms must have already 'linker_sites', 'neighbor_ids' and 'neighbor_distances'
     
     Input:
     cg_atoms: ASE atoms object with core positions and cell
     
     Returns:
-    ASE atoms object with updated arrays 'linker_neighbors' and 'neighbor_ids'
+    ASE atoms object with updated arrays 'linker_neighbors'
     """
     
     natoms = len(cg_atoms)
