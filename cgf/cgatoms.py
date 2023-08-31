@@ -1,7 +1,7 @@
 import numpy as np
 
 from ase import Atoms
-from ase.neighborlist import NeighborList, mic
+from ase.neighborlist import NeighborList, NewPrimitiveNeighborList, PrimitiveNeighborList, mic
 from scipy.optimize import minimize
 
 
@@ -22,7 +22,10 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
 
     nl = neighborlist
     if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True, 
+                          primitive=NewPrimitiveNeighborList,
+                          #primitive=PrimitiveNeighborList,
+                          )
         nl.update(cg_atoms)
 
     core_linker_dir = cg_atoms.get_array('linker_sites')
@@ -58,7 +61,7 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
 
 def find_topology(cg_atoms, r0):
     """
-    finds the topology of cg_atoms, meaning setting the 'neighbor_ids' 
+    finds the topology of cg_atoms, meaning setting the 'neighbor_ids' and 'neighbor_distances'
     arrays of cg_atom 
     
     Input:
@@ -66,25 +69,42 @@ def find_topology(cg_atoms, r0):
     r0: cutoff-radius used for finding nearest neighbor cores
     
     Returns:
-    ASE atoms object with set array 'neighbor_ids'
+    ASE atoms object with set array 'neighbor_ids' and 'neighbor_distances'
     """
     natoms = len(cg_atoms)
+    cell = cg_atoms.cell
+    positions = cg_atoms.positions
 
-    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True, 
+                      primitive=NewPrimitiveNeighborList,
+                      #primitive=PrimitiveNeighborList,
+                      )
     nl.update(cg_atoms)
 
-    neigh_ids = [] 
+    neigh_ids = []
+    neigh_dist_vec = []    
     for ii in range(natoms):
         neighbors, offsets = nl.get_neighbors(ii)
+        cells = np.dot(offsets, cell)
+        distance_vectors = positions[neighbors] + cells - positions[ii]
 
         neigh_id = []
+        dist_vec = []
         # iterate over neighbors of ii
         for jj in range(len(neighbors)):
             neigh_id.append(neighbors[jj])
+            dist_vec.append(distance_vectors[jj])  # vector from ii to jj
 
-        neigh_ids.append(neigh_id)     
+        if len(neigh_id)!=3:
+            from ase import Atoms
+            atoms = cg_atoms.copy()
+            atoms.write('Problematic_cgatoms.gen')
+        assert len(neigh_id)==3, f"Houston we've got a problem: atom id {ii} with neighbor atomic ids {neighbors} \n with distances {np.linalg.norm(np.array(dist_vec), axis=1)} and cutoff r0 {1.2*r0/2}"
 
+        neigh_ids.append(neigh_id)
+        neigh_dist_vec.append(dist_vec)
     cg_atoms.set_array('neighbor_ids', np.array(neigh_ids))
+    cg_atoms.set_array('neighbor_distances', np.array(neigh_dist_vec)) # distance from each cg_atom to its neighbors
 
     return cg_atoms
 
@@ -92,6 +112,9 @@ def find_topology(cg_atoms, r0):
 def find_neighbor_distances(cg_atoms):
     """
     Finds the neighbor distances and sets the array 'neighbor_distances' to cg_atoms
+
+    !!!Gives erroneous results if there are several neighbors with same ID for one core.!!!
+    !!!If so, please use find_topology!!!
     
     cg_atoms must have already 'neighbor_ids'
     Input:
@@ -300,7 +323,6 @@ def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors'):
     """
 
     cg_atoms = find_topology(cg_atoms, r0)  # setting 'neighbor_ids'
-    cg_atoms = find_neighbor_distances(cg_atoms)  # setting 'neighbor_distances'
     if linker_sites=='nneighbors':
         cg_atoms = find_linker_sites_guess_nneighbors(cg_atoms, linkage_length)  # setting 'linker_sites'
     elif linker_sites=='best_angles':
@@ -344,7 +366,7 @@ def read_cgatoms(fname):
     data = json.loads(data)
     
     std_keys = ['numbers', 'positions', 'cell', 'pbc']
-    cg_atoms = Atoms(numbers=data['numbers'], positions=data['positions'], cell=np.array(data['cell']), pbc=np.array(data['pbc'])) # create coarse-grained representation based on core centers
+    cg_atoms = Atoms(numbers=data['numbers'], positions=data['positions'], cell=np.array(data['cell']), pbc=np.array(data['pbc']))  # create coarse-grained representation based on core centers
     
     
     for k in data.keys():

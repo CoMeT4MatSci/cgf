@@ -1,10 +1,10 @@
 import numpy as np
 
 import itertools
+import warnings
 
 from ase import Atoms
 from ase.calculators.calculator import Calculator
-from ase.neighborlist import NeighborList
 
 from .cgatoms import find_topology, find_neighbor_distances, find_linker_neighbors
 from .cycles import cycle_graph
@@ -26,13 +26,7 @@ def collect_descriptors(structures, cy, mfs, r0):
         cg_atoms.new_array('linker_sites', np.array(core_linker_dir)) # add positions of linker sites relative to core center
 
         cg_atoms = find_topology(cg_atoms, r0)
-        cg_atoms = find_neighbor_distances(cg_atoms)
         cg_atoms = find_linker_neighbors(cg_atoms)
-
-        #nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
-        #nl.update(cg_atoms)        
-        
-        #_find_linker_neighbor(cg_atoms, r0, neighborlist=nl)
 
         bonds = _get_bonds(cg_atoms)
         bond_desc, bond_params, bond_ref = _get_bond_descriptors(cg_atoms, bonds)
@@ -146,7 +140,8 @@ class MikadoRR(Calculator):
                           'rr_incpt': 0.0,
                           'r0': 1.0,
                           'opt': True,
-                          'update_linker_sites': True}
+                          'update_linker_sites': True,
+                          'reevaluate_topology': False}
     nolabel = True
 
     def __init__(self, **kwargs):
@@ -163,30 +158,46 @@ class MikadoRR(Calculator):
             optimize internal DOFs
         update_linker_sites: boolean
             updates linker_sites if optimized. Has only an effect if ASE optimizer is used
+        reevaluate_topology: boolean
+            reevaluates topology at each calculation, meaning 'neighbor_ids' and 'neighbor_distances' are updated
+            Only necessary if unit-cell is too small (multiple neighbors with same ID)
         """
         Calculator.__init__(self, **kwargs)
 
         self._linkersites = None  # variable to save linkersite positions for geometry optimization
+        self._warned = False  # checks if warning has already been printed
+        
+
 
     def calculate(self, atoms=None, properties=implemented_properties,
                   system_changes=['positions', 'numbers', 'cell',
                                   'pbc']):
         Calculator.calculate(self, atoms, properties, system_changes)
+
+        # Check if reevaluate_topology should be used and give warning
+        for a_id, n_ids in enumerate(self.atoms.get_array('neighbor_ids')):
+            if len(n_ids)!=len(np.unique(n_ids)) and self.parameters.reevaluate_topology==False:
+                if self._warned==False:
+                    warnings.warn(f"Warning!!! Site {a_id} has neighbors with the same IDs ({n_ids})! \n \t This can lead to erroneous results if reevaluate_topology=False")
+                    self._warned = True  # so that no warning spammed
         
-        self.atoms = find_neighbor_distances(self.atoms)
+        # FF parameters
+        rr_coeff = self.parameters.rr_coeff
+        rr_incpt = self.parameters.rr_incpt
+        r0 = self.parameters.r0
+
+        if self.parameters.reevaluate_topology==True:
+            self.atoms = find_topology(self.atoms, r0)  # new NL is created
+        elif self.parameters.reevaluate_topology==False:
+            self.atoms = find_neighbor_distances(self.atoms)  # topology stays the same. Can cause issues if unit-cell too small
+
         if self.parameters.update_linker_sites:
             if self._linkersites is not None:
                 self.atoms.set_array('linker_sites', self._linkersites)
             
         natoms = len(self.atoms)
 
-
-        # FF parameters
-        rr_coeff = self.parameters.rr_coeff
-        rr_incpt = self.parameters.rr_incpt
-        r0 = self.parameters.r0
-        #opt = self.parameters.opt
-
+        # Do optimization of linkersites
         if self.parameters.opt:
             p0 = self.atoms.get_array('linker_sites')
             res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, rr_coeff, rr_incpt), 
@@ -198,7 +209,7 @@ class MikadoRR(Calculator):
             p = _renormalize_linker_lengths(self.atoms, p, p0)
 
             self.atoms.set_array('linker_sites', p)
-            self._linkersites = p
+            self._linkersites = p  # save linkersites in class for later use
 
         # get descriptors
         bonds = _get_bonds(self.atoms)
