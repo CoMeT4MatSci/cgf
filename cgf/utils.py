@@ -86,21 +86,30 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
         neighbors = neigh_ids[ii]
         for jj in range(len(neighbors)):
 
+            # v1 refers to the vector connecting two cores
+            # v2 refers to the linker_sites vector
+
+            # calculate the angle between the vector between core ii and its neighbor
+            # and the linker_site vector of core ii in that direction
             cln = core_linker_neigh[ii][jj]
             v1_ii = neigh_dist_vec[ii][jj]  # vec from ii to neighbor nii
-            v2_ii = core_linker_dir[ii][cln]  # linker_site vec
+            v2_ii = core_linker_dir[ii][cln]  # linker_site vec from ii in direction of nii
             dot = np.dot(v1_ii,v2_ii)
             det = np.cross(v1_ii,v2_ii)[2]
             phi_ii = np.arctan2(det, dot)
 
-            n_ii = neigh_ids[ii][jj]
-            neighbors_nii = neigh_ids[n_ii]
+            # calculate the angle between the vector between the neighbor and core ii
+            # and the linker_site vector of the neighbor in that direction
+            n_ii = neigh_ids[ii][jj]  # core index of neighbor
+            neighbors_nii = neigh_ids[n_ii]  # neighbors of this atom
             for kk in range(len(neighbors_nii)):
-                if neighbors_nii[kk]==ii:
-                    cln_nii = core_linker_neigh[n_ii][kk]
+                v1_nii = neigh_dist_vec[n_ii][kk] # vector from nii to kk
+
+                if np.allclose(v1_ii+v1_nii, np.zeros(3)):  # check if two vectors opposing each other (if v1_nii=-v1_ii)
+                    cln_nii = core_linker_neigh[n_ii][kk]  # linker_site vec from nii in direction of ii
+                    break
                         
-            v1_nii = -1.*v1_ii  # vec from neighbor nii to ii
-            v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec
+            v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec from nii in direction of ii
             dot = np.dot(v1_nii,v2_nii)
             det = np.cross(v1_nii,v2_nii)[2]
             phi_nii = np.arctan2(det, dot)
@@ -113,6 +122,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
                             (positions[ii][1] + v1_ii[1]),
                                 30)
 
+            # bending the beam accordingly
             norm = np.linalg.norm(v1_ii)  # norm of vector between cg sites
             normal = np.cross(np.array([0,0,1.]), v1_ii)  # normal vector
             xnew = []; ynew = []
@@ -176,12 +186,14 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
     cg_atoms.calc = calc
 
     ### first: only optimize linker_sites
+    print('Optimizing linker sites only...')
     cg_atoms.calc.parameters.opt = True
     cg_atoms.get_potential_energy()
     cg_atoms_o_ls = cg_atoms.calc.get_atoms()
     
 
     ### second: optimize geometry without optimizing linker sites
+    print('Optimizing geometry without optimizing linker sites...')
     calc = MikadoRR(**calculator.todict())
     cg_atoms_o_ls.calc = calc
     cg_atoms_o_ls.calc.parameters.opt = False
@@ -200,6 +212,7 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
     cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
 
     ### thrid: optimize geometry and optimize linker sites
+    print('Optimizing geometry and optimizing linker sites...')
     calc = MikadoRR(**calculator.todict())
     cg_atoms_o_pos.calc = calc
     cg_atoms_o_pos.calc.parameters.opt = True
