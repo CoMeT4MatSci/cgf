@@ -70,22 +70,37 @@ class MikadoPotential(Calculator):
         self.results['energy'] = energy
 
 def _get_bonds(atoms):
+    """Lists all bonds. A bond contains the atom index, the neighbor index of atom, atom index of neighbor, neighbor index of neighbor 
+
+    Args:
+        atoms (cg_atoms): cg-atoms object with 'neighbor_ids' and 'neighbor_distances'
+
+    Returns:
+        list: neighbor index of atom, atom index of neighbor, neighbor index of neighbor 
+    """
     natoms = len(atoms)
     neigh_ids = atoms.get_array('neighbor_ids')
+    neigh_dist_vec = atoms.get_array('neighbor_distances')
 
     bonds = []
     # iterate over atoms
     for ii in np.arange(natoms):
+        
         neighbors = neigh_ids[ii]
+        distance_vectors = neigh_dist_vec[ii]  # all distance vectors from ii to neighbors
 
         # iterate over neighbors of ii
         for jj in np.arange(len(neighbors)):
+            
             neighbors_jj = neigh_ids[neighbors[jj]]
-
+            v1 = distance_vectors[jj] # vector from ii to jj
+            distance_vectors_jj = neigh_dist_vec[neighbors[jj]]  # all distance vectors from jj to neighbors
+            
             # iterate over neighbors of jj
             for kk in np.arange(len(neighbors_jj)):
+                v2 = distance_vectors_jj[kk] # vector from jj to kk
 
-                if neighbors_jj[kk]==ii:                    
+                if np.allclose(v1+v2, np.zeros(3)):  # if the two vectors point exactly in opposite directions
                     bonds.append([ii, jj, neighbors[jj], kk])
 
     return bonds

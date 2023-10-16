@@ -1,4 +1,5 @@
 from ase import Atoms
+import numpy as np
 
 def remove_hatoms(s):
     del s[[atom.symbol == 'H' for atom in s]]
@@ -45,7 +46,12 @@ def mol2Atoms(mol, repr='2D'):
 
     return Atoms(positions=pos, numbers=nums)
 
-def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
+def plot_cgatoms(cg_atoms, fig=None, ax=None,
+                plot_beam=True, 
+                plot_linker_sites=True,
+                plot_neighbor_connections=False,
+                plot_cell=True,
+                savefigname=None):
     """Plots the positions of the cg_atoms, their orientation and the bonds
 
     Args:
@@ -58,6 +64,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
         fig, ax
     """
     import matplotlib.pyplot as plt
+    from cgf.redecorate import w
 
     natoms = len(cg_atoms)
     cell = cg_atoms.cell
@@ -73,40 +80,153 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None, savefigname=None):
     if not ax:
         ax = fig.add_subplot(111, aspect='equal')
 
-    ax.scatter(positions[:,0],positions[:,1], color='coral', marker='o', s=75, zorder=10)
+    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=75, zorder=10)
 
-    colors = ['red', 'green', 'purple']
-    #for i in range(core_linker_dir.shape[0]):
-    #    for li in range(core_linker_dir.shape[1]):
-    #        ax.arrow(positions[i,0],positions[i,1], core_linker_dir[i,li,0], core_linker_dir[i,li,1], 
-    #        color=colors[core_linker_neigh[i][li]], head_width=0.9, head_length=0.5, zorder=10)
-    ns = []
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
-        ns.append(ii)
         for jj in range(len(neighbors)):
-            if neighbors[jj] in ns:
-                linestyle = ':'
-            else:
-                linestyle='--'
 
+            # v1 refers to the vector connecting two cores
+            # v2 refers to the linker_sites vector
+
+            # calculate the angle between the vector between core ii and its neighbor
+            # and the linker_site vector of core ii in that direction
             cln = core_linker_neigh[ii][jj]
-            #ax.plot([positions[ii][0]+core_linker_dir[ii,cln,0], positions[neighbors[jj]][0]],
-            #        [positions[ii][1]+core_linker_dir[ii,cln,1], positions[neighbors[jj]][1]],
-            #        color=colors[jj], linestyle=linestyle, linewidth=3, alpha=0.5)
-            ax.arrow(positions[ii][0]+core_linker_dir[ii,cln,0], positions[ii][1]+core_linker_dir[ii,cln,1],
-                    neigh_dist_vec[ii][jj][0]-core_linker_dir[ii,cln,0], neigh_dist_vec[ii][jj][1]-core_linker_dir[ii,cln,1],
-                    color=colors[jj], linestyle=linestyle, linewidth=3, alpha=0.5,
-                    head_width=0.9, head_length=0.5, zorder=10)
+            v1_ii = neigh_dist_vec[ii][jj]  # vec from ii to neighbor nii
+            v2_ii = core_linker_dir[ii][cln]  # linker_site vec from ii in direction of nii
+            dot = np.dot(v1_ii,v2_ii)
+            det = np.cross(v1_ii,v2_ii)[2]
+            phi_ii = np.arctan2(det, dot)
 
-            ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
-            color=colors[jj], head_width=0.9, head_length=0.5, zorder=10)
-            
-            #ax.annotate(str(neighbors[jj])+"-"+str(jj), [positions[ii][0]+neigh_dist_vec[ii][jj][0]*2/3, positions[ii][1]+neigh_dist_vec[ii][jj][1]*2/3])
-            #ax.annotate(str(jj), [positions[ii][0]+core_linker_dir[ii,cln,0], positions[ii][1]+core_linker_dir[ii,cln,1]])
+            # calculate the angle between the vector between the neighbor and core ii
+            # and the linker_site vector of the neighbor in that direction
+            n_ii = neigh_ids[ii][jj]  # core index of neighbor
+            neighbors_nii = neigh_ids[n_ii]  # neighbors of this atom
+            for kk in range(len(neighbors_nii)):
+                v1_nii = neigh_dist_vec[n_ii][kk] # vector from nii to kk
+
+                if np.allclose(v1_ii+v1_nii, np.zeros(3)):  # check if two vectors opposing each other (if v1_nii=-v1_ii)
+                    cln_nii = core_linker_neigh[n_ii][kk]  # linker_site vec from nii in direction of ii
+                    break
+                        
+            v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec from nii in direction of ii
+            dot = np.dot(v1_nii,v2_nii)
+            det = np.cross(v1_nii,v2_nii)[2]
+            phi_nii = np.arctan2(det, dot)
+
+
+            xs = np.linspace(positions[ii][0],
+                            (positions[ii][0] + v1_ii[0])   ,
+                                30)
+            ys = np.linspace(positions[ii][1],
+                            (positions[ii][1] + v1_ii[1]),
+                                30)
+
+            # bending the beam accordingly
+            norm = np.linalg.norm(v1_ii)  # norm of vector between cg sites
+            normal = np.cross(np.array([0,0,1.]), v1_ii)  # normal vector
+            xnew = []; ynew = []
+            for x, y in zip(xs, ys):
+                lens = np.sqrt((xs[0]-x)**2 + (ys[0]-y)**2)
+                disp_vec = normal * w(lens/norm, phi_ii, phi_nii)
+                xnew.append(x+disp_vec[0])
+                ynew.append(y+disp_vec[1])
+            if plot_beam:
+                ax.plot(xnew, ynew,
+                        color='lightsteelblue', linewidth=10, zorder=-1)
+
+            if plot_neighbor_connections:
+                ax.plot(xs,ys, color='blue', zorder=5)
+            if plot_linker_sites:
+                ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
+            color='darkblue', head_width=0.9, head_length=0.5, lw=2, zorder=10)
+
+    if plot_cell:  # simulation cell
+        ax.plot([0., cell.array[0,0]], [0., cell.array[0,1]], color='grey')
+        ax.plot([0., cell.array[1,0]], [0., cell.array[1,1]], color='grey')
+        ax.plot([cell.array[1,0], cell.array[1,0] + cell.array[0,0]], [cell.array[1,1], cell.array[1,1] + cell.array[0,1]], color='grey')
+        ax.plot([cell.array[0,0], cell.array[1,0] + cell.array[0,0]], [cell.array[0,1], cell.array[1,1] + cell.array[0,1]], color='grey')
 
     plt.tight_layout()
     if savefigname:
         plt.savefig(savefigname, dpi=300)     
 
     return fig, ax
+
+
+
+def geom_optimize(cg_atoms, calculator, trajectory=None):
+    from ase.constraints import FixedPlane
+    from ase.optimize import BFGS
+    r0=35.082756/np.sqrt(3)
+
+    cg_atoms.calc = calculator
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms.set_constraint(c)
+
+    dyn = BFGS(cg_atoms, trajectory=trajectory)
+    dyn.run(fmax=0.01)
+    cg_atoms_o = cg_atoms.calc.get_atoms()
+
+    return cg_atoms_o
+
+def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
+    from ase.constraints import FixedPlane
+    from ase.optimize import BFGS
+    from cgf.surrogate import MikadoRR
+
+
+    calc = MikadoRR(**calculator.todict())
+    cg_atoms.calc = calc
+
+    ### first: only optimize linker_sites
+    print('Optimizing linker sites only...')
+    cg_atoms.calc.parameters.opt = True
+    cg_atoms.get_potential_energy()
+    cg_atoms_o_ls = cg_atoms.calc.get_atoms()
+    
+
+    ### second: optimize geometry without optimizing linker sites
+    print('Optimizing geometry without optimizing linker sites...')
+    calc = MikadoRR(**calculator.todict())
+    cg_atoms_o_ls.calc = calc
+    cg_atoms_o_ls.calc.parameters.opt = False
+    
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms_o_ls],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms_o_ls.set_constraint(c)
+
+    dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory)
+    dyn.run(fmax=0.01)
+    cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
+
+    ### thrid: optimize geometry and optimize linker sites
+    print('Optimizing geometry and optimizing linker sites...')
+    calc = MikadoRR(**calculator.todict())
+    cg_atoms_o_pos.calc = calc
+    cg_atoms_o_pos.calc.parameters.opt = True
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms_o_pos],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms_o_pos.set_constraint(c)
+
+    dyn = BFGS(cg_atoms_o_pos, trajectory=trajectory)
+    dyn.run(fmax=0.01)
+    cg_atoms_o = cg_atoms_o_pos.calc.get_atoms()
+
+    return cg_atoms_o

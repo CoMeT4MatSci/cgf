@@ -1,7 +1,9 @@
 import numpy as np
 
 from ase import Atoms
-from ase.neighborlist import NeighborList, mic
+from ase.neighborlist import NeighborList, NewPrimitiveNeighborList, PrimitiveNeighborList, mic
+from scipy.optimize import minimize
+
 
 ###############################################################################
 import json
@@ -20,7 +22,10 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
 
     nl = neighborlist
     if nl==None:
-        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+        nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True, 
+                          primitive=NewPrimitiveNeighborList,
+                          #primitive=PrimitiveNeighborList,
+                          )
         nl.update(cg_atoms)
 
     core_linker_dir = cg_atoms.get_array('linker_sites')
@@ -51,13 +56,12 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
                     break
         core_linker_neigh.append(linker_neigh)
         neigh_dist_vec.append(dist_vec)
-    print('neigh_dist_vec', neigh_dist_vec[0])
     cg_atoms.set_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor
     return np.array(neigh_dist_vec)
 
 def find_topology(cg_atoms, r0):
     """
-    finds the topology of cg_atoms, meaning setting the 'neighbor_ids' 
+    finds the topology of cg_atoms, meaning setting the 'neighbor_ids' and 'neighbor_distances'
     arrays of cg_atom 
     
     Input:
@@ -65,32 +69,45 @@ def find_topology(cg_atoms, r0):
     r0: cutoff-radius used for finding nearest neighbor cores
     
     Returns:
-    ASE atoms object with set array 'neighbor_ids'
+    ASE atoms object with set array 'neighbor_ids' and 'neighbor_distances'
     """
     natoms = len(cg_atoms)
+    cell = cg_atoms.cell
+    positions = cg_atoms.positions
 
-    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True, 
+                      primitive=NewPrimitiveNeighborList,
+                      #primitive=PrimitiveNeighborList,
+                      )
     nl.update(cg_atoms)
 
-    neigh_ids = [] 
+    neigh_ids = []
+    neigh_dist_vec = []    
     for ii in range(natoms):
         neighbors, offsets = nl.get_neighbors(ii)
+        cells = np.dot(offsets, cell)
+        distance_vectors = positions[neighbors] + cells - positions[ii]
 
         neigh_id = []
+        dist_vec = []
         # iterate over neighbors of ii
         for jj in range(len(neighbors)):
             neigh_id.append(neighbors[jj])
+            dist_vec.append(distance_vectors[jj])  # vector from ii to jj
 
-        neigh_ids.append(neigh_id)     
-
+        neigh_ids.append(neigh_id)
+        neigh_dist_vec.append(dist_vec)
     cg_atoms.set_array('neighbor_ids', np.array(neigh_ids))
+    cg_atoms.set_array('neighbor_distances', np.array(neigh_dist_vec)) # distance from each cg_atom to its neighbors
 
     return cg_atoms
-
 
 def find_neighbor_distances(cg_atoms):
     """
     Finds the neighbor distances and sets the array 'neighbor_distances' to cg_atoms
+
+    !!!Gives erroneous results if there are several neighbors with same ID for one core.!!!
+    !!!If so, please use find_topology!!!
     
     cg_atoms must have already 'neighbor_ids'
     Input:
@@ -121,7 +138,7 @@ def find_neighbor_distances(cg_atoms):
 
     return cg_atoms
 
-def find_linker_sites_guess(cg_atoms, linkage_length):
+def find_linker_sites_guess_nneighbors(cg_atoms, linkage_length):
     """
     Makes an initial guess for 'linker_sites' 
     based on variable linkage_length and the direction towards the nearest neighbor.
@@ -132,7 +149,7 @@ def find_linker_sites_guess(cg_atoms, linkage_length):
     cg_atoms: ASE atoms object with core positions and cell
     
     Returns:
-    ASE atoms object with set array 'neighbor_distances' array
+    ASE atoms object with set array 'linker_sites' array
     """
 
     natoms = len(cg_atoms)
@@ -155,17 +172,96 @@ def find_linker_sites_guess(cg_atoms, linkage_length):
 
     return cg_atoms
 
+def find_linker_sites_guess_best_angles(cg_atoms, linkage_length):
+    """
+    Makes an initial guess for 'linker_sites' 
+    Based on fixed linkage_length and rigid equiangular linker_sites.
+    Calculates angles of rigid linker_sites which minimizes the sum of 
+        squares of angles to the respective vectors to the nearest neighbors.
+
+    cg_atoms must have already 'neighbor_ids' and 'neighbor_distances'
+    
+    Input:
+    cg_atoms: ASE atoms object with core positions and cell
+    
+    Returns:
+    ASE atoms object with set array 'linker_sites' array
+    """
+
+    def rot_matrix(angle):
+        '''Rotation by angle around z-axis'''
+        rot = np.array([[np.cos(angle), -np.sin(angle), 0], 
+                        [np.sin(angle), np.cos(angle), 0], 
+                        [0., 0., 1.]], dtype=float)
+        return rot
+
+    def get_angle_sum(phi_0, v1s, linker_sites_tmp):
+        """
+        Rotates linker_sites by phi_0 and calculates the sum of squares
+        of angles to the respective vectors to the nearest neighbors v1s"""
+
+        # rotate vectors by phi_0
+        ls_new = []
+        for ls in linker_sites_tmp:
+            ls_new.append(rot_matrix(phi_0) @ ls)
+
+        # calculate square sum of angles to respecitve vector to NN
+        phi_sqsum = 0
+        for jj, lsn in enumerate(ls_new):
+            dot = np.dot(v1s[jj], lsn)
+            det = np.cross(v1s[jj], lsn)[2]
+            phi_sqsum += (np.arctan2(det, dot))**2
+        return phi_sqsum
+
+    natoms = len(cg_atoms)
+    neigh_ids = cg_atoms.get_array('neighbor_ids')
+    neigh_dist_vec = cg_atoms.get_array('neighbor_distances')
+    
+    core_linker_dir = []
+    for ii in range(natoms):
+        neighbors = neigh_ids[ii]
+
+        linker_dir_tmp = []
+        v1 = neigh_dist_vec[ii][0]
+        phi_0 = np.arctan2(v1[1], v1[0])  # absolute orientation
+        phi_diff = 2*np.pi/len(neighbors)  # angle between linker_sites
+        for jj in range(len(neighbors)):
+            if jj==0:
+                v1 = neigh_dist_vec[ii][jj]  # vector from ii to jj
+                r1 = np.linalg.norm(v1)
+                linkersite = linkage_length * v1/r1  # first linker site
+                linker_dir_tmp.append(linkersite)
+            else:              
+                linker_dir_tmp.append(rot_matrix(jj*phi_diff) @ linkersite)  # rotate other linkers by phi_diff*jj
+
+        linker_dir_tmp = np.array(linker_dir_tmp)
+        
+        # minimize sum of squares of angles for specific cg site
+        res = minimize(get_angle_sum, phi_0, args=(neigh_dist_vec[ii], linker_dir_tmp), 
+               method='BFGS')
+        phi_0_new = res.x
+        
+        # apply new angle
+        linker_dir = []
+        for ls in linker_dir_tmp:
+           linker_dir.append(rot_matrix(phi_0_new) @ ls)
+        
+        core_linker_dir.append(linker_dir)
+
+    cg_atoms.set_array('linker_sites', np.array(core_linker_dir, dtype=np.float))  # add positions of linker sites relative to core center
+
+    return cg_atoms
+
 def find_linker_neighbors(cg_atoms):
     """
     Updates the topology of cg_atoms, meaning the 'linker_neighbors' and 
-    'neighbor_ids' arrays of cg_atom
     cg_atoms must have already 'linker_sites', 'neighbor_ids' and 'neighbor_distances'
     
     Input:
     cg_atoms: ASE atoms object with core positions and cell
     
     Returns:
-    ASE atoms object with updated arrays 'linker_neighbors' and 'neighbor_ids'
+    ASE atoms object with updated arrays 'linker_neighbors'
     """
     
     natoms = len(cg_atoms)
@@ -203,23 +299,28 @@ def find_linker_neighbors(cg_atoms):
     
     return cg_atoms
 
-def init_cgatoms(cg_atoms, linkage_length, r0):
+def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors'):
     """
-    Initialize a CG ase Atoms object. Makes an initial guess for 'linker_sites' 
-    based on variable linkage_length and the direction towards the nearest neighbor
+    Initialize a CG ase Atoms object. Makes an initial guess for 'linker_sites'.
     
     Input:
     cg_atoms: ASE atoms object with core positions and cell
     linkage_length: distance of linkage site from center of core
     r0: cutoff-radius used for finding nearest neighbor cores
+    linker_sites: Either "nneighbors" (based on vectors towards nearest neighbors)
+                    or "best_angles" (based on rotation of rigid equiangularly spaced linker_sites)
     
     Returns:
     ASE atoms object with additional arrays 'linker_sites', 'neighbor_distances', 'neighbor_ids' and 'linker_neighbors' which are used in CG Models
     """
 
     cg_atoms = find_topology(cg_atoms, r0)  # setting 'neighbor_ids'
-    cg_atoms = find_neighbor_distances(cg_atoms)  # setting 'neighbor_distances'
-    cg_atoms = find_linker_sites_guess(cg_atoms, linkage_length)  # setting 'linker_sites'
+    if linker_sites=='nneighbors':
+        cg_atoms = find_linker_sites_guess_nneighbors(cg_atoms, linkage_length)  # setting 'linker_sites'
+    elif linker_sites=='best_angles':
+        cg_atoms = find_linker_sites_guess_best_angles(cg_atoms, linkage_length)  # setting 'linker_sites'
+    else:
+        assert 'Wrong linker_sites argument. Either "nneighbors" or "best_angles".'
     cg_atoms = find_linker_neighbors(cg_atoms)  # setting 'linker_neighbors'
     
     return cg_atoms
@@ -234,7 +335,7 @@ def write_cgatoms(cg_atoms, fname):
     
     """
     
-    cga_dict = {'positions': cg_atoms.positions, 'numbers': cg_atoms.numbers, 'cell': cg_atoms.cell.array,
+    cga_dict = {'positions': cg_atoms.positions, 'numbers': cg_atoms.numbers, 'cell': cg_atoms.cell.array, 'pbc': cg_atoms.pbc,
                 'linker_sites': cg_atoms.get_array('linker_sites'),
                 'linker_neighbors': cg_atoms.get_array('linker_neighbors'),
                 'neighbor_ids': cg_atoms.get_array('neighbor_ids'),
@@ -256,8 +357,8 @@ def read_cgatoms(fname):
         data = json.load(jfile)
     data = json.loads(data)
     
-    std_keys = ['numbers', 'positions', 'cell']
-    cg_atoms = Atoms(numbers=data['numbers'], positions=data['positions'], cell=np.array(data['cell']), pbc=True) # create coarse-grained representation based on core centers
+    std_keys = ['numbers', 'positions', 'cell', 'pbc']
+    cg_atoms = Atoms(numbers=data['numbers'], positions=data['positions'], cell=np.array(data['cell']), pbc=np.array(data['pbc']))  # create coarse-grained representation based on core centers
     
     
     for k in data.keys():
