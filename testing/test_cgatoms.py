@@ -25,5 +25,5 @@ def test_init_cgatoms():
 
     assert cg_atoms.get_array('linker_sites').shape==(2, 3, 3)  # two sites, with three linker-sites each, each linkersite having x,y,z coord
 
-    assert cg_atoms.get_array('linker_neighbors').shape(2, 3)
+    assert cg_atoms.get_array('linker_neighbors').shape==(2, 3)
     
