@@ -35,7 +35,6 @@ motif.nodes['D']['cl'] = 6
 
 r0 = 30.082756/np.sqrt(3) 
 core_descriptors, bond_descriptors = extract_features(motif=motif, atoms_list=structures, r0=r0)
-core_descriptors, bond_descriptors = extract_features(motif=motif, atoms_list=structures, r0=r0)
 training_model, reg = train_model(core_descriptors, bond_descriptors, energies)
 
 print('reg coreff: ', training_model['rr_coeff'])

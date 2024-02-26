@@ -1,6 +1,6 @@
 Contains stressed and relaxed structures of a unit cell of a COF-5 unit cell in 'traj_strain.traj'.
 
-The first structure is at 0 strain.
+The first structure is the cell-relaxed structure at 0 strain.
 The next 10 structures are isotropic strains from -1% to 1% (excluding 0%).
 The next 10 structures are shear strains (meaning positive(negative) strain along x and negative(positive) strain along y). From -1% to 1% (excluding 0%).
 With the following dftb settings with the matsci slater-koster files:
@@ -19,3 +19,5 @@ dftb_SinglePoint = {
             }
 
 Relaxation was performed with the SciPyFminBFGS algorithm with fmax=0.01 (see ASE documentation for details).
+
+Additionally, a Stone-Wales defect of COF-5 was relaxed (with the same settings) based on a 3x3 system of the relaxed unit-cell of COF-5 from the previous calc. This is used to compare the performance of the trained model.
