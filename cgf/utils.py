@@ -155,7 +155,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
 
 
 
-def geom_optimize(cg_atoms, calculator, trajectory=None):
+def geom_optimize(cg_atoms, calculator, trajectory=None, max_steps=500):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     r0=35.082756/np.sqrt(3)
@@ -171,12 +171,12 @@ def geom_optimize(cg_atoms, calculator, trajectory=None):
     cg_atoms.set_constraint(c)
 
     dyn = BFGS(cg_atoms, trajectory=trajectory)
-    dyn.run(fmax=0.01)
+    dyn.run(fmax=0.01, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
 
     return cg_atoms_o
 
-def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
+def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, max_steps=500):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     from cgf.surrogate import MikadoRR
@@ -208,7 +208,7 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
     cg_atoms_o_ls.set_constraint(c)
 
     dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory)
-    dyn.run(fmax=0.01)
+    dyn.run(fmax=0.01, steps=max_steps)
     cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
 
     ### thrid: optimize geometry and optimize linker sites
@@ -226,7 +226,7 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
     cg_atoms_o_pos.set_constraint(c)
 
     dyn = BFGS(cg_atoms_o_pos, trajectory=trajectory)
-    dyn.run(fmax=0.01)
+    dyn.run(fmax=0.01, steps=max_steps)
     cg_atoms_o = cg_atoms_o_pos.calc.get_atoms()
 
     return cg_atoms_o
