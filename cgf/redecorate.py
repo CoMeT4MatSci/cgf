@@ -193,7 +193,6 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, r0):
     phi0 = _get_phi0(cg_atoms, r0)  # get absolute angle
     phi_c = cg_atoms.get_initial_charges() + phi0  # calculate angle
     
-    
     redecorated_atoms = Atoms(cell=cg_atoms.cell, pbc=True)
     
     ### find nearest neighbors (incl. in neighboring cells)
@@ -288,5 +287,116 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, r0):
         s.rotate(phi_01 * 180/np.pi, 'z')
         s.translate(linker_0 + linker_01/2)
         redecorated_atoms += s
+
+    return redecorated_atoms
+
+
+
+def redecorate_cg_atoms_new(cg_atoms, core_atoms, linker_atoms, linkage_length=None):
+    '''
+    Redecorates coarse-grained model with real atoms.
+    
+    Input:
+    cg_atoms: ase atoms object of coarse-grained model that should be redecorated
+    linker_atoms: ase atoms object of linker molecule. Must be aligned along x. Must have origin at 0.
+    core_atoms: ase atoms of core molecule
+    linkage_length: optional. If None, linkage_length from linker_neighbors taken. Otherwise scaled accordingly
+    
+    DOES NOT YET WORK FOR SMALL UNIT CELLS!
+    Returns:
+    ase atoms object
+    '''
+    
+
+    core_linker_dir = cg_atoms.get_array('linker_sites')
+    core_linker_neigh = cg_atoms.get_array('linker_neighbors')
+    neigh_dist_vec = cg_atoms.get_array('neighbor_distances')
+    neigh_ids = cg_atoms.get_array('neighbor_ids')
+    positions = cg_atoms.get_positions()
+
+
+    redecorated_atoms = Atoms(cell=cg_atoms.cell, pbc=True)
+    if core_atoms:
+        core_atoms.center()
+        for p in positions:
+            core_atoms_tmp = core_atoms.copy()
+            core_atoms_tmp.translate(p)
+            redecorated_atoms += core_atoms_tmp
+
+    used_pairs = []
+    for ii in range(len(cg_atoms)):
+        neighbors = neigh_ids[ii]
+        for jj in range(len(neighbors)):
+            # to not double count:
+            # ! DOES NOT WORK FOR SMALL CELLS!
+            if ((ii, neighbors[jj]) in used_pairs) or ((neighbors[jj], ii) in used_pairs):
+                continue
+            used_pairs.append((ii, neighbors[jj]))
+
+            # v1 refers to the vector connecting two cores
+            # v2 refers to the linker_sites vector
+
+            # calculate the angle between the vector between core ii and its neighbor
+            # and the linker_site vector of core ii in that direction
+            cln = core_linker_neigh[ii][jj]
+            v1_ii = neigh_dist_vec[ii][jj]  # vec from ii to neighbor nii
+            v2_ii = core_linker_dir[ii][cln]  # linker_site vec from ii in direction of nii
+            dot = np.dot(v1_ii,v2_ii)
+            det = np.cross(v1_ii,v2_ii)[2]
+            phi_ii = np.arctan2(det, dot)
+
+            # calculate the angle between the vector between the neighbor and core ii
+            # and the linker_site vector of the neighbor in that direction
+            n_ii = neigh_ids[ii][jj]  # core index of neighbor
+            neighbors_nii = neigh_ids[n_ii]  # neighbors of this atom
+            for kk in range(len(neighbors_nii)):
+                v1_nii = neigh_dist_vec[n_ii][kk] # vector from nii to kk
+
+                if np.allclose(v1_ii+v1_nii, np.zeros(3)):  # check if two vectors opposing each other (if v1_nii=-v1_ii)
+                    cln_nii = core_linker_neigh[n_ii][kk]  # linker_site vec from nii in direction of ii
+                    break
+                        
+            v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec from nii in direction of ii
+            
+            if linkage_length:
+                v2_nii = linkage_length * v2_nii/np.linalg.norm(v2_nii)
+                v2_ii = linkage_length * v2_ii/np.linalg.norm(v2_ii)
+            
+            dot = np.dot(v1_nii,v2_nii)
+            det = np.cross(v1_nii,v2_nii)[2]
+            phi_nii = np.arctan2(det, dot)  # angle between core_ii-neighbor vec and linker-site_ii vec
+
+
+
+            linkervec_ii_nii = -v2_ii + v1_ii + v2_nii  # vector from one linkersite to the connected linkersite
+            ell_ii_nii = np.linalg.norm(linkervec_ii_nii)  # norm
+            norm = np.linalg.norm(v1_ii)  # norm of vector between cg sites
+            normal = np.cross(np.array([0,0,1.]), v1_ii)  # normal vector
+            # # bending the beam accordingly
+
+            s = linker_atoms.copy()
+            len_x_linker = s.positions[:,0].max()-s.positions[:,0].min()  # linker len along x
+
+            s.positions[:,0] *= ell_ii_nii/len_x_linker   # scaling linker to correct length along x
+
+            # rotating linker to v2_ii
+            dot = np.dot(v1_ii, np.array([1, 0, 0]))  # assumes initial linker orientation along x
+            det = np.cross(v1_ii,  np.array([1, 0, 0]))[2]
+            phi_linker = np.arctan2(det, dot)
+            s.rotate(-phi_linker * 180/np.pi, 'z')
+
+            # translating pos of core + linkage_length along vector to neigh core
+            s.translate(positions[ii] + np.linalg.norm(v2_ii) * v1_ii/np.linalg.norm(v1_ii))  
+            
+            # apply bending
+            posnew = []
+            for x, y, z in s.get_positions():
+                 lens = np.sqrt((positions[ii][0]-x)**2 + (positions[ii][1]-y)**2)
+                 disp_vec = normal * w(lens/norm, phi_ii, phi_nii)
+                 posnew.append([x+disp_vec[0], y+disp_vec[1], z])
+            s.set_positions(posnew)
+
+            redecorated_atoms += s
+
 
     return redecorated_atoms
