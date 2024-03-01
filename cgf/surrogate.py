@@ -203,7 +203,7 @@ class MikadoRR(Calculator):
             res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, rr_coeff, rr_incpt), 
                            method='BFGS', 
                            jac=True,
-                           options={'gtol': 1e-3, 'disp': False})
+                           options={'gtol': 1e-2, 'disp': False})  # 1e-2 might be already enough?
             p = res.x.reshape(p0.shape)
 
             p = _renormalize_linker_lengths(self.atoms, p, p0)

@@ -17,6 +17,9 @@ def generate_SW_defect(reference_cell, supercell_size=(3,3,1)):
 
     del cg_SW[[0, 1]]
     cg_SW = cg_SW + rot_atoms
+    reference_cell[0] *= supercell_size[0]
+    reference_cell[1] *= supercell_size[1]
+
     cg_SW.set_cell(reference_cell, scale_atoms=True)
 
     # shift SW to center for nicer visuals
