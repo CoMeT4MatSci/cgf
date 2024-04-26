@@ -1,9 +1,11 @@
 import random
-
 import numpy as np
+from ase import Atoms
 from cgf.cycles import cycle_graph, find_cycles
 from cgf.motifs import find_unique_motifs
-from cgf.surrogate import collect_descriptors, get_feature_matrix
+from cgf.surrogate import get_feature_matrix, _get_core_descriptors, _get_bond_descriptors, _get_bonds
+from cgf.cgatoms import find_topology, find_linker_neighbors
+
 from sklearn.linear_model import LinearRegression, Ridge, RidgeCV
 from sklearn.metrics import mean_squared_error
 
@@ -14,50 +16,43 @@ from sklearn.metrics import mean_squared_error
 # 4. find unique motifs
 # 5. collect_descriptors
 
-def extract_features(motif, r0, atoms_list):
-    """Extracts the core and linker descriptors from a list of
-    ASE atoms objects
+def extract_features(structures, r0, get_rc_linkersites_func, **kwargs):
+    """Extraction of features from a list of atoms objects
 
     Args:
-        motif (nx.Graph): For example:
-                # Tp Core Motif
-                motif = nx.Graph()
-                motif.add_edge("A", "B")
-                motif.add_edge("C", "B")
-                motif.add_edge("D", "B")
-
-                # all hexagons
-                motif.nodes['A']['cl'] = 6
-                motif.nodes['B']['cl'] = 6
-                motif.nodes['C']['cl'] = 6
-                motif.nodes['D']['cl'] = 6
+        structures (list): list of ASE atoms objects
         r0 (float): Approximate distance between nodes
-        atoms_list (list): list of ASE atoms objects
+        get_rc_linkersites_func (function): function to determine rc and the linkersites
+
 
     Returns:
-        list, list: core_descriptors, bond_descriptors
+        list, list: core_ descriptors and bond_descriptors
     """
-    # find the cycles in the first structure
-    # it is assumed that the topology does not change and we can reuse this information
+    core_descriptors = []
+    bond_descriptors = []
+    for s0 in structures:
+       
+        r_c, core_linker_dir = get_rc_linkersites_func(structure=s0, **kwargs)
 
-    cy = find_cycles(atoms_list[0])
+        cg_atoms = Atoms(['Y'] * len(r_c), positions=r_c, cell=s0.cell, pbc=True) # create coarse-grained representation based on core centers
+        cg_atoms.new_array('linker_sites', np.array(core_linker_dir)) # add positions of linker sites relative to core center
 
-    G_cy = cycle_graph(cy, atoms_list[0].positions)
+        cg_atoms = find_topology(cg_atoms, r0)
+        cg_atoms = find_linker_neighbors(cg_atoms)
 
-    # annotate cycles with cycle length
-    for n in G_cy.nodes:
-        G_cy.nodes[n]['cl'] = len(G_cy.nodes[n]['cycle'])
+        bonds = _get_bonds(cg_atoms)
+        bond_desc, bond_params, bond_ref = _get_bond_descriptors(cg_atoms, bonds)
+        bond_descriptors.append(bond_desc)
 
+        core_desc = _get_core_descriptors(cg_atoms)
+        core_descriptors.append(core_desc)
 
-    mfs = find_unique_motifs(motif, G_cy)
-
-    core_descriptors, bond_descriptors = collect_descriptors(atoms_list, cy, mfs, r0)
     print('number of samples: %d' % (len(bond_descriptors)))
     print('number of linkers: %d' % (len(bond_descriptors[0])))
     print('number of descriptors per linker: %d' % (len(bond_descriptors[0][0])))
     print('number of cores: %d' % (len(core_descriptors[0])))
     print('number of descriptors per core: %d' % (len(core_descriptors[0][0])))
-
+        
     return core_descriptors, bond_descriptors
 
 
@@ -113,8 +108,8 @@ def get_learning_curve(training_structures,
                        training_energies,
                        test_structures, 
                        test_energies, 
-                       motif, 
-                       r0):
+                       r0,
+                       get_rc_linkersites_func, **kwargs):
     """From a training and test set, a learning curve is generated.
     The Mean Square Error is calculated for different number of samples
     from the training structures. 
@@ -126,8 +121,9 @@ def get_learning_curve(training_structures,
         training_energies (list): list of energies to train on
         test_structures (list): list of ASE atoms to compare to
         test_energies (list): list of energies to compare to
-        motif (nx.Graph): motif for extract_features
         r0 (float): Approximate distance between nodes
+        get_rc_linkersites_func (function): function to determine rc and the linkersites
+        **kwargs: arguments for get_rc_linkersites_func
 
     Returns:
         list, list, list: n_training_structures, MSE_training, MSE_test
@@ -144,17 +140,17 @@ def get_learning_curve(training_structures,
         training_energies_tmp = np.array(training_energies_tmp)
 
 
-        core_descriptors, bond_descriptors = extract_features(motif=motif, atoms_list=training_structures_tmp, r0=r0)
+        core_descriptors, bond_descriptors = extract_features(training_structures_tmp, r0, get_rc_linkersites_func, **kwargs)
         training_model, reg = train_model(core_descriptors, bond_descriptors, training_energies_tmp)
 
-        core_descriptors_test, bond_descriptors_test = extract_features(motif=motif, atoms_list=test_structures, r0=r0)
+        core_descriptors_test, bond_descriptors_test = extract_features(test_structures, r0, get_rc_linkersites_func, **kwargs)
         X_test = get_feature_matrix(core_descriptors_test, bond_descriptors_test)
         y_test = test_energies-training_energies.min()
 
 
         print("MSE test", ((reg.predict(X_test)-y_test)**2).mean())
         MSE_test.append(((reg.predict(X_test)-y_test)**2).mean())
-        core_descriptors_training, bond_descriptors_training = extract_features(motif=motif, atoms_list=training_structures, r0=r0)
+        core_descriptors_training, bond_descriptors_training = extract_features(training_structures, r0, get_rc_linkersites_func, **kwargs)
         X_training = get_feature_matrix(core_descriptors_training, bond_descriptors_training)
         y_training = training_energies-training_energies.min()
 
