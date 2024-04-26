@@ -6,36 +6,11 @@ import warnings
 from ase import Atoms
 from ase.calculators.calculator import Calculator
 
-from .cgatoms import find_topology, find_neighbor_distances, find_linker_neighbors
-from .cycles import cycle_graph
+from .cgatoms import find_topology, find_neighbor_distances
 from .bnff import _get_bonds
 
 from scipy.optimize import minimize
 
-
-def collect_descriptors(structures, cy, mfs, r0):
-    core_descriptors = []
-    bond_descriptors = []
-    for s0 in structures:
-        G_cy = cycle_graph(cy, s0.positions)
-
-        r_c = np.array([G_cy.nodes[m['B']]['pos'].mean(axis=0) for m in mfs]) # compute core centers
-        core_linker_dir = [[G_cy.nodes[m[ls]]['pos'].mean(axis=0)-G_cy.nodes[m['B']]['pos'].mean(axis=0) for ls in ['A', 'C', 'D']] for m in mfs]
-
-        cg_atoms = Atoms(['Y'] * len(r_c), positions=r_c, cell=s0.cell, pbc=True) # create coarse-grained representation based on core centers
-        cg_atoms.new_array('linker_sites', np.array(core_linker_dir)) # add positions of linker sites relative to core center
-
-        cg_atoms = find_topology(cg_atoms, r0)
-        cg_atoms = find_linker_neighbors(cg_atoms)
-
-        bonds = _get_bonds(cg_atoms)
-        bond_desc, bond_params, bond_ref = _get_bond_descriptors(cg_atoms, bonds)
-        bond_descriptors.append(bond_desc)
-
-        core_desc = _get_core_descriptors(cg_atoms)
-        core_descriptors.append(core_desc)
-        
-    return core_descriptors, bond_descriptors
 
 
 def get_feature_matrix(core_descriptors, bond_descriptors):

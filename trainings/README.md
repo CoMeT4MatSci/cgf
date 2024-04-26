@@ -1,10 +1,16 @@
-Contains stressed and relaxed structures of a unit cell of a COF-5 unit cell in 'traj_strain.traj'.
+All training structures were performed with the following settings (unless stated differently in the respective folder:)
+
+Contains stressed and relaxed structures of a unit cell of a COF unit cell in 'traj_training.traj'.
 
 The first structure is the cell-relaxed structure at 0 strain.
 The next 10 structures are isotropic strains from -1% to 1% (excluding 0%).
 The next 10 structures are shear strains (meaning positive(negative) strain along x and negative(positive) strain along y). From -1% to 1% (excluding 0%).
+
+In case DFTB calculations were performed, the following settings were used:
 With the following dftb settings with the matsci slater-koster files:
 dftb_SinglePoint = {
+            'Hamiltonian_MaxSCCIterations': 500,
+            'Hamiltonian_SCC': 'Yes',
             'Hamiltonian_Dispersion_': 'DftD4',
             'Hamiltonian_Dispersion_s6': 1.0,
             'Hamiltonian_Dispersion_s8': 3.3157614,
@@ -16,8 +22,16 @@ dftb_SinglePoint = {
             'Hamiltonian_MaxAngularMomentum_C': 'p',
             'Hamiltonian_MaxAngularMomentum_N': 'p',
             'Hamiltonian_MaxAngularMomentum_H': 's',
+            'Hamiltonian_Filling_': 'Fermi',
+            'Hamiltonian_Filling_Temperature [K]': '100',
             }
 
-Relaxation was performed with the SciPyFminBFGS algorithm with fmax=0.01 (see ASE documentation for details).
+In case calculations with the AIREBO Force Field were performed, the following pair_stlye were used:
 
-Additionally, a Stone-Wales defect of COF-5 was relaxed (with the same settings) based on a 3x3 system of the relaxed unit-cell of COF-5 from the previous calc. This is used to compare the performance of the trained model.
+pair_style          airebo 3.0 1 1
+pair_coeff          * * CH.airebo C H
+
+
+All relaxation was performed with the SciPyFminBFGS algorithm with fmax=0.01 (see ASE documentation for details).
+
+The resulting fitted parameters are saved in 'training_model.json'.

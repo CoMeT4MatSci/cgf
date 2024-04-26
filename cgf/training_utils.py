@@ -55,6 +55,33 @@ def extract_features(structures, r0, get_rc_linkersites_func, **kwargs):
         
     return core_descriptors, bond_descriptors
 
+def get_rc_linkersites_ids(structure, id_groups):
+    """A method to obtain rc and the linkersites based on manually selected ids.
+    Each group contains the ids of atoms representing the linkersites.
+    The core-position is evaluated based on the center of the linkersites.
+
+    Does not work if linkersites are split-between periodic images.
+
+    Args:
+        structure (atoms): ASE atoms object
+        id_groups (list): List of Lists of atomic ids
+
+    Returns:
+        np.array, list: core positions and linker-site vectors for each node
+    """
+    
+    r_cs = []   
+    core_linker_dir = []
+
+    for id_group in id_groups:
+        r_c = np.average(structure[id_group].get_positions(), axis=0)
+        r_cs.append(r_c)
+        cld_tmp = []
+        for idg in id_group:
+            cld_tmp.append(structure.get_positions()[idg] - r_c)
+        core_linker_dir.append(cld_tmp)
+
+    return np.array(r_cs), core_linker_dir
 
 ## PART B: Learning
 
