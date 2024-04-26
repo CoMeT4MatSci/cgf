@@ -86,7 +86,7 @@ def test_MikadoRR_calc_SW(tmp_path):
 
     cg_atoms = read_cgatoms(Path(test_data_path/'COF-5_opt_SW_cg.json'))
     calculator = MikadoRR(r0=r0, rr_coeff=np.array([-44.4342221, 1.27912546, 4.45880587, 4.45880586,
-            4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, opt=True, update_linker_sites=True)
+            4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, opt=True, update_linker_sites=True, **{'gtol': 1e-3})
     cg_atoms.calc = calculator
     assert cg_atoms.get_potential_energy()==pytest.approx(11.982403)
 

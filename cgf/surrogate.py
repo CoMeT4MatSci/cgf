@@ -166,6 +166,7 @@ class MikadoRR(Calculator):
 
         self._linkersites = None  # variable to save linkersite positions for geometry optimization
         self._warned = False  # checks if warning has already been printed
+        self._gtol = kwargs.get('gtol', 1e-2)
         
 
 
@@ -203,7 +204,7 @@ class MikadoRR(Calculator):
             res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, rr_coeff, rr_incpt), 
                            method='BFGS', 
                            jac=True,
-                           options={'gtol': 1e-2, 'disp': False})  # 1e-2 might be already enough?
+                           options={'gtol': self._gtol, 'disp': False})  # 1e-2 might be already enough?
             p = res.x.reshape(p0.shape)
 
             p = _renormalize_linker_lengths(self.atoms, p, p0)
