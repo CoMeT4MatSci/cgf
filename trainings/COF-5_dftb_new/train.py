@@ -4,10 +4,9 @@ import random
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from ase.build import bulk
 from ase.io import Trajectory, read
 from cgf.cgatoms import init_cgatoms
-from cgf.surrogate import MikadoRR, get_feature_matrix
+from cgf.surrogate import MikadoRR
 from cgf.training_utils import (extract_features, get_learning_curve,
                                 train_model)
 from cgf.utils import remove_hatoms
@@ -101,63 +100,44 @@ with open('training_model.json', 'w') as fp:
     json.dump(training_model, fp)
 
 
-# compare to SW structure
+# test and redecorate to SW structure
 
-from cgf.surrogate import MikadoRR
 from cgf.utils import geom_optimize
-SW = read('SW_defect/sw_relaxed.json')
+import matplotlib.pyplot as plt
+from cgf.utils import plot_cgatoms
+from cgf.redecorate import redecorate_cg_atoms
+from ase.visualize import view
 
-cg_SW = generate_SW_defect(reference_cell=structures[0].copy().cell, supercell_size=(3,3,1))
+linker1 = read('linkermol.xyz')
+linker2 = read('linkermol2.xyz')
 
-print('Reference defect energy: ', SW.get_potential_energy() - 3*3*energies[0])
+core1 = None
+core2 = read('coremol.xyz')
 
-cg_SW = init_cgatoms(cg_atoms=cg_SW, r0=r0, linkage_length=2.5)
+linkage_length1 = 2.489/2
+linkage_length2 = 2.489/2+2.397/2
 
+
+cg_SW = generate_SW_defect(reference_cell=structures[0].cell, supercell_size=(3,3,1))
+cg_SW = init_cgatoms(cg_atoms=cg_SW, r0=r0, linkage_length=linkage_length1)
 
 calculator = MikadoRR(r0=r0, rr_coeff=np.array(training_model['rr_coeff']), rr_incpt=training_model['rr_incpt'], 
-        opt=True, update_linker_sites=True, reevaluate_Topology=True)
-
+        opt=True, update_linker_sites=True, reevaluate_Topology=False)
 cg_SW.calc = calculator
 print('SW energy without optimization of positions of cores: ', cg_SW.get_potential_energy())
 
-cg_SW_o = geom_optimize(cg_SW, calculator, trajectory='trajoptcg.traj')
+cg_SW_o = geom_optimize(cg_SW, calculator, trajectory=None)
 print('SW energy with optimization of positions of cores: ', cg_SW_o.get_potential_energy())
 
+# two ways to redecorate
+# without core
+redecorated1 = redecorate_cg_atoms(cg_SW_o, core_atoms=core1, linker_atoms=linker1, linkage_length=linkage_length1)
+view(redecorated1)
+# with core
+redecorated2 = redecorate_cg_atoms(cg_SW_o, core_atoms=core2, linker_atoms=linker2, linkage_length=linkage_length2)
+view(redecorated2)
+fig, ax = plot_cgatoms(cg_SW_o, plot_neighbor_connections=True) #, fig=fig, ax=ax)
+ax.scatter(redecorated2.get_positions()[:,0], redecorated2.get_positions()[:,1], color='black')
+plt.show()
 
 
-# r0 = 30.082756/np.sqrt(3) 
-# core_descriptors, bond_descriptors = extract_features(motif=motif, atoms_list=[SW], r0=r0)
-# training_model, reg = train_model(core_descriptors, bond_descriptors, np.array([SW.get_potential_energy()]))
-
-
-
-# SW_energies = []
-# n_training_structures = []
-# for n in range(2, len(training_structures)+1, 1):
-
-#     ids_train_tmp = [random.randrange(0, len(training_structures)) for _ in range(n)]
-#     training_structures_tmp = [training_structures[id_training] for id_training in ids_train_tmp]
-#     training_energies_tmp = [training_energies[id_training] for id_training in ids_train_tmp]
-#     training_energies_tmp = np.array(training_energies_tmp)
-
-
-#     core_descriptors, bond_descriptors = extract_features(motif=motif, atoms_list=training_structures_tmp, r0=r0)
-#     training_model, reg = train_model(core_descriptors, bond_descriptors, training_energies_tmp)
-
-#     cg_SW = generate_SW_defect(reference_cell=SW.cell, supercell_size=(3,3,1))
-#     cg_SW = init_cgatoms(cg_atoms=cg_SW, r0=r0, linkage_length=2.5)
-#     calculator = MikadoRR(r0=r0, rr_coeff=np.array(training_model['rr_coeff']), rr_incpt=training_model['rr_incpt'], 
-#             opt=True, update_linker_sites=True, reevaluate_Topology=True)
-#     cg_SW.calc = calculator
-#     cg_SW_o = geom_optimize(cg_SW, calculator, trajectory='trajoptcg.traj')
-#     print("SW energy test", cg_SW_o.get_potential_energy())
-#     SW_energies.append(cg_SW_o.get_potential_energy())
-
-
-#     n_training_structures.append(n)
-
-# plt.scatter(n_training_structures, SW_energies, label='Training SW energies')
-# plt.ylabel('SW energies')
-# plt.xlabel('Number of Training data')
-# plt.legend()
-# plt.show()

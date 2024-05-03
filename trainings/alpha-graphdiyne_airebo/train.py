@@ -1,14 +1,11 @@
 import json
-import random
 
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
-from ase.build import bulk
 from ase.io import Trajectory, read
 from cgf.cgatoms import init_cgatoms
-from cgf.surrogate import MikadoRR, get_feature_matrix
-from cgf.training_utils import (extract_features, get_learning_curve,
+from cgf.surrogate import MikadoRR
+from cgf.training_utils import (extract_features, 
                                 train_model)
 from cgf.utils import remove_hatoms
 from cgf.geometry_utils import generate_SW_defect
@@ -78,15 +75,16 @@ with open('training_model.json', 'w') as fp:
     json.dump(training_model, fp)
 
 
-#### compare to SW structure
+# test and redecorate to SW structure
 
 from cgf.utils import geom_optimize
 import matplotlib.pyplot as plt
 from cgf.utils import plot_cgatoms
 from ase import Atoms
-from cgf.redecorate import redecorate, redecorate_cg_atoms, redecorate_cg_atoms_new
+from cgf.redecorate import redecorate_cg_atoms
 from ase.visualize import view
 
+linker = read('linkermol.xyz')
 
 
 cg_SW = generate_SW_defect(reference_cell=structures[0].cell, supercell_size=(3,3,1))
@@ -100,15 +98,12 @@ calculator = MikadoRR(r0=r0, rr_coeff=np.array(training_model['rr_coeff']), rr_i
 cg_SW.calc = calculator
 print('SW energy without optimization of positions of cores: ', cg_SW.get_potential_energy())
 
-fig, ax = plot_cgatoms(cg_SW)
-plt.show()
-redecorated = redecorate_cg_atoms_new(cg_SW, Atoms('C'), linker, linkage_length=1.5)
-view(redecorated)
-cg_SW_o = geom_optimize(cg_SW, calculator, trajectory='trajoptcg.traj')
+cg_SW_o = geom_optimize(cg_SW, calculator, trajectory=None)
 print('SW energy with optimization of positions of cores: ', cg_SW_o.get_potential_energy())
-redecorated = redecorate_cg_atoms_new(cg_SW_o, Atoms('C'), linker, linkage_length=1.5)
+redecorated = redecorate_cg_atoms(cg_SW_o,  linker, Atoms('C'), linkage_length=1.4)
 view(redecorated)
-fig, ax = plot_cgatoms(cg_SW_o)
+fig, ax = plot_cgatoms(cg_SW_o, plot_neighbor_connections=True)
+ax.scatter(redecorated.get_positions()[:,0], redecorated.get_positions()[:,1], color='black')
 plt.show()
 
 
