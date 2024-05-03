@@ -133,7 +133,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
                 ynew.append(y+disp_vec[1])
             if plot_beam:
                 ax.plot(xnew, ynew,
-                        color='lightsteelblue', linewidth=10, zorder=-1)
+                        color='lightsteelblue', linewidth=50/np.sqrt(len(cg_atoms)), zorder=-1)
 
             if plot_neighbor_connections:
                 ax.plot(xs,ys, color='blue', zorder=5)
@@ -155,10 +155,9 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
 
 
 
-def geom_optimize(cg_atoms, calculator, trajectory=None, max_steps=500):
+def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
-    r0=35.082756/np.sqrt(3)
 
     cg_atoms.calc = calculator
 
@@ -170,13 +169,35 @@ def geom_optimize(cg_atoms, calculator, trajectory=None, max_steps=500):
 
     cg_atoms.set_constraint(c)
 
-    dyn = BFGS(cg_atoms, trajectory=trajectory)
+    dyn = BFGS(cg_atoms, trajectory=trajectory, logfile=logfile)
     dyn.run(fmax=0.01, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
 
     return cg_atoms_o
 
-def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, max_steps=500):
+def iso_cell_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500):
+    from ase.constraints import FixedPlane
+    from ase.optimize import BFGS
+    from ase.filters import FrechetCellFilter
+
+    cg_atoms.calc = calculator
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms.set_constraint(c)
+    ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=True)
+
+    dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
+    dyn.run(fmax=0.01, steps=max_steps)
+    cg_atoms_o = cg_atoms.calc.get_atoms()
+
+    return cg_atoms_o
+
+def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     from cgf.surrogate import MikadoRR
@@ -207,7 +228,7 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, max_steps=500
 
     cg_atoms_o_ls.set_constraint(c)
 
-    dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory)
+    dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory, logfile=logfile)
     dyn.run(fmax=0.01, steps=max_steps)
     cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
 
