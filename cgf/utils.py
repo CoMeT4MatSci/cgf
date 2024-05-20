@@ -74,7 +74,6 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
     neigh_ids = cg_atoms.get_array('neighbor_ids')
     neigh_dist_vec = cg_atoms.get_array('neighbor_distances')
 
-
     if not fig:
         fig = plt.figure(figsize=(10,10))
     if not ax:
@@ -114,17 +113,22 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
             det = np.cross(v1_nii,v2_nii)[2]
             phi_nii = np.arctan2(det, dot)
 
+            # generate positions of the linkage sites based on phi and linkage_length
+            linkage_site1 = positions[ii] + v2_ii
+            linkage_site2 = positions[ii] + v1_ii + v2_nii
+            linkage_vec = linkage_site2 - linkage_site1
 
-            xs = np.linspace(positions[ii][0],
-                            (positions[ii][0] + v1_ii[0])   ,
+
+            xs = np.linspace(linkage_site1[0],
+                            (linkage_site2[0])   ,
                                 30)
-            ys = np.linspace(positions[ii][1],
-                            (positions[ii][1] + v1_ii[1]),
+            ys = np.linspace(linkage_site1[1],
+                            (linkage_site2[1]),
                                 30)
 
             # bending the beam accordingly
-            norm = np.linalg.norm(v1_ii)  # norm of vector between cg sites
-            normal = np.cross(np.array([0,0,1.]), v1_ii)  # normal vector
+            norm = np.linalg.norm(linkage_vec)  # norm of vector between cg sites
+            normal = np.cross(np.array([0,0,1.]), linkage_vec)  # normal vector
             xnew = []; ynew = []
             for x, y in zip(xs, ys):
                 lens = np.sqrt((xs[0]-x)**2 + (ys[0]-y)**2)
@@ -136,10 +140,12 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
                         color='lightsteelblue', linewidth=50/np.sqrt(len(cg_atoms)), zorder=-1)
 
             if plot_neighbor_connections:
-                ax.plot(xs,ys, color='blue', zorder=5)
+                ax.plot([positions[ii][0], positions[ii][0] + v1_ii[0]],
+                        [positions[ii][1], positions[ii][1] + v1_ii[1]], 
+                        color='blue', zorder=5)
             if plot_linker_sites:
                 ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
-            color='darkblue', head_width=0.9, head_length=0.5, lw=2, zorder=10)
+            color='darkred', head_width=0.5, head_length=0.5, lw=3, zorder=10, alpha=0.8)
 
     if plot_cell:  # simulation cell
         ax.plot([0., cell.array[0,0]], [0., cell.array[0,1]], color='grey')
