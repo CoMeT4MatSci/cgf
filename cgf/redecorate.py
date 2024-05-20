@@ -277,7 +277,6 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             det = np.cross(v1_nii,v2_nii)[2]
             phi_nii = np.arctan2(det, dot)  # angle between neighbor_nii-core_ii vec and linker-site_nii vec
 
-
             
             s = linker_atoms.copy()
 
@@ -287,12 +286,9 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             linkage_vec = linkage_site2 - linkage_site1
 
             len_x_linker = s.positions[:,0].max()-s.positions[:,0].min()  # linker len along x
-            len_v1_ii = np.linalg.norm(v1_ii)  # norm of vector between cg sites            
             len_linkage_vec = np.linalg.norm(linkage_vec)
 
-            # s.positions[:,0] /= len_x_linker/(len_v1_ii-2*linkage_length)  # scaling linker to correct length along x
             s.positions[:,0] *= len_linkage_vec/len_x_linker  # scaling linker to correct length along x
-            #s.translate([linkage_length, 0, 0])  # shifting linker one linkage_length along x
             
             # bending the linker accordingly (assumes linker is along x)
 
@@ -302,14 +298,12 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
                 lens = sat.position[0]
 
                 # calculate the normal along the bent beam. To properly shift atoms that are not at y=0
-                # m = dwdx(lens/len_v1_ii, phi_ii, phi_nii)
                 m = dwdx(lens/len_linkage_vec, phi_ii, phi_nii)
                 nomal_w = np.array([-m, 1, 0])
                 nomal_w /= np.linalg.norm(nomal_w)
                 nomal_w *= sat.position[1]
 
                 # displacement vector. Displaces atoms vertically along y and then shifts along normal_w
-                # disp_vec = w(lens/len_v1_ii, phi_ii, phi_nii) * np.array([0, 1, 0]) * len_v1_ii  + nomal_w
                 disp_vec = w(lens/len_linkage_vec, phi_ii, phi_nii) * np.array([0, 1, 0]) * len_linkage_vec  + nomal_w
                 disp_vec[1] -= sat.position[1]  # to correct if atoms are not y=0
   
@@ -320,15 +314,15 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             # rotating linker to v1_ii
             dot = np.dot(v1_ii, np.array([1, 0, 0]))  # assumes initial linker orientation along x
             det = np.cross(v1_ii,  np.array([1, 0, 0]))[2]
-            phi_linker = np.arctan2(det, dot)
-            
-            dot = np.dot(v1_ii, linkage_vec)  # assumes initial linker orientation along x
+            phi_v1_ii = np.arctan2(det, dot)
+            # rotate to linkage_vec
+            dot = np.dot(v1_ii, linkage_vec)  
             det = np.cross(v1_ii,  linkage_vec)[2]
-            phi2 = np.arctan2(det, dot)
-            s.rotate(-(phi_linker-phi2) * 180/np.pi, 'z')
+            phi_linkage_vec = np.arctan2(det, dot)
+            
+            s.rotate(-(phi_v1_ii-phi_linkage_vec) * 180/np.pi, 'z')
 
             # translating pos of core along vector to neigh core
-            # s.translate(positions[ii])  
             s.translate(positions[ii]+v2_ii)  
             
             redecorated_atoms += s
