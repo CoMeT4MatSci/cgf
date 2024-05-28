@@ -1,5 +1,7 @@
 from ase import Atoms
 import numpy as np
+import time
+
 
 def remove_hatoms(s):
     del s[[atom.symbol == 'H' for atom in s]]
@@ -161,9 +163,11 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
 
 
 
-def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500):
+def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
+    
+    starttime = time.time()
 
     cg_atoms.calc = calculator
 
@@ -176,12 +180,13 @@ def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps
     cg_atoms.set_constraint(c)
 
     dyn = BFGS(cg_atoms, trajectory=trajectory, logfile=logfile)
-    dyn.run(fmax=0.01, steps=max_steps)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
+    print(f"Relaxation time: {(time.time() - starttime):.2f} s")
 
     return cg_atoms_o
 
-def iso_cell_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500):
+def cell_optimize(cg_atoms, calculator, isotropic=False, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     from ase.filters import FrechetCellFilter
@@ -195,15 +200,15 @@ def iso_cell_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_s
     )
 
     cg_atoms.set_constraint(c)
-    ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=True)
+    ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=isotropic)
 
     dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
-    dyn.run(fmax=0.01, steps=max_steps)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
 
     return cg_atoms_o
 
-def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500):
+def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     from cgf.surrogate import MikadoRR
@@ -235,7 +240,7 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None,
     cg_atoms_o_ls.set_constraint(c)
 
     dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory, logfile=logfile)
-    dyn.run(fmax=0.01, steps=max_steps)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
 
     ### thrid: optimize geometry and optimize linker sites
@@ -253,7 +258,7 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None,
     cg_atoms_o_pos.set_constraint(c)
 
     dyn = BFGS(cg_atoms_o_pos, trajectory=trajectory)
-    dyn.run(fmax=0.01, steps=max_steps)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms_o_pos.calc.get_atoms()
 
     return cg_atoms_o

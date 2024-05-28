@@ -110,7 +110,7 @@ class MikadoRR(Calculator):
 
     """
 
-    implemented_properties = ['energy', 'forces']
+    implemented_properties = ['energy', 'free_energy', 'forces', 'stress']  # free_energy==energy (just added for numerical stress)
     default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
                           'rr_incpt': 0.0,
                           'r0': 1.0,
@@ -201,6 +201,7 @@ class MikadoRR(Calculator):
         # predict energy
         energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])
         self.results['energy'] = energy
+        self.results['free_energy'] = energy
 
         # predict forces
         if 'forces' in properties:
@@ -209,6 +210,9 @@ class MikadoRR(Calculator):
                 forces[at,:] = -rr_coeff @ get_feature_gradient(core_desc, bond_desc,
                                                 None, _get_bond_descriptors_gradient(bond_params, bond_ref, at)).T
             self.results['forces'] = forces
+        if 'stress' in properties:
+            self.results['stress'] = Calculator.calculate_numerical_stress(self, atoms)
+
 
 
 ###############################################################################
