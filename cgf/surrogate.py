@@ -1,16 +1,14 @@
-import numpy as np
-
 import itertools
 import warnings
 
+import numpy as np
 from ase import Atoms
 from ase.calculators.calculator import Calculator
-
-from .cgatoms import find_topology, find_neighbor_distances
-from .bnff import _get_bonds
-
+from cgf.utils import numeric_stress_2D
 from scipy.optimize import minimize
 
+from .bnff import _get_bonds
+from .cgatoms import find_neighbor_distances, find_topology
 
 
 def get_feature_matrix(core_descriptors, bond_descriptors):
@@ -211,9 +209,12 @@ class MikadoRR(Calculator):
                                                 None, _get_bond_descriptors_gradient(bond_params, bond_ref, at)).T
             self.results['forces'] = forces
         if 'stress' in properties:
-            self.results['stress'] = Calculator.calculate_numerical_stress(self, atoms)
+            self.results['stress'] = self.calculate_numerical_stress_2D(atoms)
 
+    def calculate_numerical_stress_2D(self, atoms, d=1e-6, voigt=True):
+        """Calculate numerical stress using finite difference."""
 
+        return numeric_stress_2D(atoms, d=d, voigt=voigt)
 
 ###############################################################################
 

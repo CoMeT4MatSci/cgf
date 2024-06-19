@@ -1,8 +1,8 @@
 import numpy as np
-
-from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
+from cgf.utils import numeric_stress_2D
+
 
 class BAFFPotential(Calculator):
     """Valence force field with bond-stretching and angle-bending terms.
@@ -16,7 +16,7 @@ class BAFFPotential(Calculator):
 
     """
 
-    implemented_properties = ['energy', 'forces']
+    implemented_properties = ['energy', 'free_energy', 'forces', 'stress']  # free_energy==energy (just added for numerical stress)
     default_parameters = {'Kbond': 1.0,
                           'Kangle': 1.0,
                           'r0': 1.0,
@@ -117,4 +117,12 @@ class BAFFPotential(Calculator):
                     forces[ii,:] -= 2 * Kangle * (cosT - cosT0) * cosT * (v1/r1**2 + v2/r2**2)
 
         self.results['energy'] = energy
+        self.results['free_energy'] = energy
         self.results['forces'] = forces
+        if 'stress' in properties:
+            self.results['stress'] = self.calculate_numerical_stress_2D(atoms)
+
+    def calculate_numerical_stress_2D(self, atoms, d=1e-6, voigt=True):
+        """Calculate numerical stress using finite difference."""
+
+        return numeric_stress_2D(atoms, d=d, voigt=voigt)

@@ -81,7 +81,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
     if not ax:
         ax = fig.add_subplot(111, aspect='equal')
 
-    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=75, zorder=10)
+    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=150/np.sqrt(len(cg_atoms)), zorder=10)
 
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
@@ -186,10 +186,11 @@ def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps
 
     return cg_atoms_o
 
-def cell_optimize(cg_atoms, calculator, isotropic=False, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
+def cell_optimize(cg_atoms, calculator, isotropic=False, trajectory=None, logfile=None, max_steps=1000, fmax=0.01):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     from ase.filters import FrechetCellFilter
+    starttime = time.time()
 
     cg_atoms.calc = calculator
 
@@ -205,6 +206,7 @@ def cell_optimize(cg_atoms, calculator, isotropic=False, trajectory=None, logfil
     dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
     dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
+    print(f"Relaxation time: {(time.time() - starttime):.2f} s")
 
     return cg_atoms_o
 
@@ -262,3 +264,46 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None,
     cg_atoms_o = cg_atoms_o_pos.calc.get_atoms()
 
     return cg_atoms_o
+
+
+
+
+
+def numeric_stress_2D(atoms, d=1e-6, voigt=True):
+    """Based on ase numeric_stress calculation"""
+    stress = np.zeros((3, 3), dtype=float)
+
+    cell = atoms.cell.copy()
+    V = atoms.get_volume()
+    for i in range(2):
+        x = np.eye(3)
+        x[i, i] += d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eplus = atoms.get_potential_energy(force_consistent=True)
+
+        x[i, i] -= 2 * d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eminus = atoms.get_potential_energy(force_consistent=True)
+
+        stress[i, i] = (eplus - eminus) / (2 * d * V)
+        x[i, i] += d
+
+        j = i - 2
+        x[i, j] = d
+        x[j, i] = d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eplus = atoms.get_potential_energy(force_consistent=True)
+
+        x[i, j] = -d
+        x[j, i] = -d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eminus = atoms.get_potential_energy(force_consistent=True)
+
+        stress[i, j] = (eplus - eminus) / (4 * d * V)
+        stress[j, i] = stress[i, j]
+    atoms.set_cell(cell, scale_atoms=True)
+
+    if voigt:
+        return stress.flat[[0, 4, 8, 5, 2, 1]]
+    else:
+        return stress
