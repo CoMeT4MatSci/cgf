@@ -1,12 +1,13 @@
-import numpy as np
-
-from ase import Atoms
-from ase.neighborlist import NeighborList, NewPrimitiveNeighborList, PrimitiveNeighborList, mic
-from scipy.optimize import minimize
-
-
 ###############################################################################
 import json
+import warnings
+
+import numpy as np
+from ase import Atoms
+from ase.neighborlist import (NeighborList, NewPrimitiveNeighborList,
+                              PrimitiveNeighborList, mic)
+from scipy.optimize import minimize
+
 
 def convert(x):
     if hasattr(x, "tolist"):  # numpy arrays have this
@@ -293,6 +294,8 @@ def find_linker_neighbors(cg_atoms):
                 if np.abs(angle) < phi0/2:  
                     linker_neigh.append(li)
                     break
+        if len(linker_neigh)!=3:
+            warnings.warn(f"Atom {ii} has {len(linker_neigh)} instead of 3: {linker_neigh}")
         core_linker_neigh.append(linker_neigh)
 
     cg_atoms.set_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor
