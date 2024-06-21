@@ -323,22 +323,13 @@ def train_model(core_descriptors, bond_descriptors, energies):
         dict, Ridge: dictionary containing the model parameters 
                     and error scores
     """
-    from sklearn import linear_model
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler, normalize
 
     # feature matrix
     X = get_feature_matrix(core_descriptors, bond_descriptors)
-    # X, norms = normalize(X)
-
 
     # target values
     y = energies-energies.min()
 
-    # Ridge Regression with Cross Validation
-    # model = make_pipeline(StandardScaler(with_mean=False), 
-    #                     linear_model.RidgeCV(alphas=[1e-5,1e-6,1e-7,1e-8,1e-9,1e-10,1e-11,1e-12], cv=int(len(y)/6)), ).fit(X, y)
-    # reg = model["ridgecv"]
     reg = RidgeCV(alphas=[1e-5,1e-6,1e-7,1e-8,1e-9,1e-10,1e-11,1e-12], cv=int(len(y)/3)).fit(X, y)
     alpha = reg.alpha_
     cv_score_mean = reg.best_score_
