@@ -1,12 +1,13 @@
-import numpy as np
-
-from ase import Atoms
-from ase.neighborlist import NeighborList, NewPrimitiveNeighborList, PrimitiveNeighborList, mic
-from scipy.optimize import minimize
-
-
 ###############################################################################
 import json
+import warnings
+
+import numpy as np
+from ase import Atoms
+from ase.neighborlist import (NeighborList, NewPrimitiveNeighborList,
+                              PrimitiveNeighborList, mic)
+from scipy.optimize import minimize
+
 
 def convert(x):
     if hasattr(x, "tolist"):  # numpy arrays have this
@@ -94,9 +95,11 @@ def find_topology(cg_atoms, r0):
         for jj in range(len(neighbors)):
             neigh_id.append(neighbors[jj])
             dist_vec.append(distance_vectors[jj])  # vector from ii to jj
-
+        if len(neigh_id)!=3:
+            warnings.warn(f"Atom {ii} has {len(neigh_id)} instead of 3: {neigh_id}")
         neigh_ids.append(neigh_id)
         neigh_dist_vec.append(dist_vec)
+
     cg_atoms.set_array('neighbor_ids', np.array(neigh_ids))
     cg_atoms.set_array('neighbor_distances', np.array(neigh_dist_vec)) # distance from each cg_atom to its neighbors
 

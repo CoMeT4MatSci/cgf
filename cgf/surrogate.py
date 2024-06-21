@@ -1,41 +1,14 @@
-import numpy as np
-
 import itertools
 import warnings
 
+import numpy as np
 from ase import Atoms
 from ase.calculators.calculator import Calculator
-
-from .cgatoms import find_topology, find_neighbor_distances, find_linker_neighbors
-from .cycles import cycle_graph
-from .bnff import _get_bonds
-
+from cgf.utils import numeric_stress_2D
 from scipy.optimize import minimize
 
-
-def collect_descriptors(structures, cy, mfs, r0):
-    core_descriptors = []
-    bond_descriptors = []
-    for s0 in structures:
-        G_cy = cycle_graph(cy, s0.positions)
-
-        r_c = np.array([G_cy.nodes[m['B']]['pos'].mean(axis=0) for m in mfs]) # compute core centers
-        core_linker_dir = [[G_cy.nodes[m[ls]]['pos'].mean(axis=0)-G_cy.nodes[m['B']]['pos'].mean(axis=0) for ls in ['A', 'C', 'D']] for m in mfs]
-
-        cg_atoms = Atoms(['Y'] * len(r_c), positions=r_c, cell=s0.cell, pbc=True) # create coarse-grained representation based on core centers
-        cg_atoms.new_array('linker_sites', np.array(core_linker_dir)) # add positions of linker sites relative to core center
-
-        cg_atoms = find_topology(cg_atoms, r0)
-        cg_atoms = find_linker_neighbors(cg_atoms)
-
-        bonds = _get_bonds(cg_atoms)
-        bond_desc, bond_params, bond_ref = _get_bond_descriptors(cg_atoms, bonds)
-        bond_descriptors.append(bond_desc)
-
-        core_desc = _get_core_descriptors(cg_atoms)
-        core_descriptors.append(core_desc)
-        
-    return core_descriptors, bond_descriptors
+from .bnff import _get_bonds
+from .cgatoms import find_neighbor_distances, find_topology
 
 
 def get_feature_matrix(core_descriptors, bond_descriptors):
@@ -135,7 +108,7 @@ class MikadoRR(Calculator):
 
     """
 
-    implemented_properties = ['energy', 'forces']
+    implemented_properties = ['energy', 'free_energy', 'forces', 'stress']  # free_energy==energy (just added for numerical stress)
     default_parameters = {'rr_coeff': [0., 0., 0., 0., 0., 0.,],
                           'rr_incpt': 0.0,
                           'r0': 1.0,
@@ -166,6 +139,7 @@ class MikadoRR(Calculator):
 
         self._linkersites = None  # variable to save linkersite positions for geometry optimization
         self._warned = False  # checks if warning has already been printed
+        self._gtol = kwargs.get('gtol', 1e-2)
         
 
 
@@ -203,7 +177,7 @@ class MikadoRR(Calculator):
             res = minimize(_energy_gradient_internal, p0.reshape(-1), args=(self.atoms, rr_coeff, rr_incpt), 
                            method='BFGS', 
                            jac=True,
-                           options={'gtol': 1e-3, 'disp': False})
+                           options={'gtol': self._gtol, 'disp': False})  # 1e-2 might be already enough?
             p = res.x.reshape(p0.shape)
 
             p = _renormalize_linker_lengths(self.atoms, p, p0)
@@ -225,6 +199,7 @@ class MikadoRR(Calculator):
         # predict energy
         energy = np.dot(rr_coeff, X.reshape(-1)) + rr_incpt * len(bond_descriptors[0])
         self.results['energy'] = energy
+        self.results['free_energy'] = energy
 
         # predict forces
         if 'forces' in properties:
@@ -233,35 +208,51 @@ class MikadoRR(Calculator):
                 forces[at,:] = -rr_coeff @ get_feature_gradient(core_desc, bond_desc,
                                                 None, _get_bond_descriptors_gradient(bond_params, bond_ref, at)).T
             self.results['forces'] = forces
+        if 'stress' in properties:
+            self.results['stress'] = self.calculate_numerical_stress_2D(atoms)
 
+    def calculate_numerical_stress_2D(self, atoms, d=1e-6, voigt=True):
+        """Calculate numerical stress using finite difference."""
+
+        return numeric_stress_2D(atoms, d=d, voigt=voigt)
 
 ###############################################################################
 
 def _renormalize_linker_lengths(atoms, p, p0):
     # make sure that the distances to the linkage sites do not change
-    dim = np.sum(atoms.pbc)
-    if dim==2:  # if 2D
-        d = np.where(atoms.pbc==False)[0][0]  # index of out-of-plane dimension
-        p[:,:,d] = p0[:,:,d].copy()
-    else:
-        d = 3
-    if dim==2:
-        p_tmp = np.delete(p, np.s_[d], 2)
-        p0_tmp = np.delete(p0, np.s_[d], 2)
-    else:
-        p_tmp = p.copy()
-        p0_tmp = p0.copy()
-        scaling_factors = []
+
+    # old: eventually delete
+    # dim = np.sum(atoms.pbc)
+    # if dim==2:  # if 2D
+    #     d = np.where(atoms.pbc==False)[0][0]  # index of out-of-plane dimension
+    #     p[:,:,d] = p0[:,:,d].copy()
+    # else:
+    #     d = 3
+    # if dim==2:
+    #     p_tmp = np.delete(p, np.s_[d], 2)
+    #     p0_tmp = np.delete(p0, np.s_[d], 2)
+    # else:
+    #     p_tmp = p.copy()
+    #     p0_tmp = p0.copy()
+    #     scaling_factors = []
+    # scaling_factors = np.zeros(p.shape[:2])
+    # for i in range(p.shape[0]):
+    #     for j in range(p.shape[1]):
+    #         scaling_factors[i, j] = (np.linalg.norm(p0_tmp[i,j,:])/np.linalg.norm(p_tmp[i,j,:]))
+
+    # for k in range(p.shape[2]):
+    #     if k==d:
+    #         continue
+    #     p[:,:,k] *= scaling_factors
+
+    # new: sets z dim to 0. Works only for 2D
+    p[:,:,2] = 0
     scaling_factors = np.zeros(p.shape[:2])
     for i in range(p.shape[0]):
         for j in range(p.shape[1]):
-            scaling_factors[i, j] = (np.linalg.norm(p0_tmp[i,j,:])/np.linalg.norm(p_tmp[i,j,:]))
-
-    for k in range(p.shape[2]):
-        if k==d:
-            continue
+            scaling_factors[i, j] = (np.linalg.norm(p0[i,j,:])/np.linalg.norm(p[i,j,:]))    
+    for k in range(2):
         p[:,:,k] *= scaling_factors
-
     return p
 
 def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):

@@ -1,5 +1,7 @@
 from ase import Atoms
 import numpy as np
+import time
+
 
 def remove_hatoms(s):
     del s[[atom.symbol == 'H' for atom in s]]
@@ -74,13 +76,12 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
     neigh_ids = cg_atoms.get_array('neighbor_ids')
     neigh_dist_vec = cg_atoms.get_array('neighbor_distances')
 
-
     if not fig:
         fig = plt.figure(figsize=(10,10))
     if not ax:
         ax = fig.add_subplot(111, aspect='equal')
 
-    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=75, zorder=10)
+    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=150/np.sqrt(len(cg_atoms)), zorder=10)
 
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
@@ -114,17 +115,22 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
             det = np.cross(v1_nii,v2_nii)[2]
             phi_nii = np.arctan2(det, dot)
 
+            # generate positions of the linkage sites based on phi and linkage_length
+            linkage_site1 = positions[ii] + v2_ii
+            linkage_site2 = positions[ii] + v1_ii + v2_nii
+            linkage_vec = linkage_site2 - linkage_site1
 
-            xs = np.linspace(positions[ii][0],
-                            (positions[ii][0] + v1_ii[0])   ,
+
+            xs = np.linspace(linkage_site1[0],
+                            (linkage_site2[0])   ,
                                 30)
-            ys = np.linspace(positions[ii][1],
-                            (positions[ii][1] + v1_ii[1]),
+            ys = np.linspace(linkage_site1[1],
+                            (linkage_site2[1]),
                                 30)
 
             # bending the beam accordingly
-            norm = np.linalg.norm(v1_ii)  # norm of vector between cg sites
-            normal = np.cross(np.array([0,0,1.]), v1_ii)  # normal vector
+            norm = np.linalg.norm(linkage_vec)  # norm of vector between cg sites
+            normal = np.cross(np.array([0,0,1.]), linkage_vec)  # normal vector
             xnew = []; ynew = []
             for x, y in zip(xs, ys):
                 lens = np.sqrt((xs[0]-x)**2 + (ys[0]-y)**2)
@@ -133,13 +139,15 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
                 ynew.append(y+disp_vec[1])
             if plot_beam:
                 ax.plot(xnew, ynew,
-                        color='lightsteelblue', linewidth=10, zorder=-1)
+                        color='lightsteelblue', linewidth=50/np.sqrt(len(cg_atoms)), zorder=-1)
 
             if plot_neighbor_connections:
-                ax.plot(xs,ys, color='blue', zorder=5)
+                ax.plot([positions[ii][0], positions[ii][0] + v1_ii[0]],
+                        [positions[ii][1], positions[ii][1] + v1_ii[1]], 
+                        color='blue', zorder=5)
             if plot_linker_sites:
                 ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
-            color='darkblue', head_width=0.9, head_length=0.5, lw=2, zorder=10)
+            color='darkred', head_width=0.5, head_length=0.5, lw=3, zorder=10, alpha=0.8)
 
     if plot_cell:  # simulation cell
         ax.plot([0., cell.array[0,0]], [0., cell.array[0,1]], color='grey')
@@ -155,10 +163,11 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
 
 
 
-def geom_optimize(cg_atoms, calculator, trajectory=None):
+def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
-    r0=35.082756/np.sqrt(3)
+    
+    starttime = time.time()
 
     cg_atoms.calc = calculator
 
@@ -170,13 +179,38 @@ def geom_optimize(cg_atoms, calculator, trajectory=None):
 
     cg_atoms.set_constraint(c)
 
-    dyn = BFGS(cg_atoms, trajectory=trajectory)
-    dyn.run(fmax=0.01)
+    dyn = BFGS(cg_atoms, trajectory=trajectory, logfile=logfile)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
+    print(f"Relaxation time: {(time.time() - starttime):.2f} s")
 
     return cg_atoms_o
 
-def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
+def cell_optimize(cg_atoms, calculator, isotropic=False, trajectory=None, logfile=None, max_steps=1000, fmax=0.01):
+    from ase.constraints import FixedPlane
+    from ase.optimize import BFGS
+    from ase.filters import FrechetCellFilter
+    starttime = time.time()
+
+    cg_atoms.calc = calculator
+
+    # for 2D optimization. Works only with ASE version directly from gitlab
+    c = FixedPlane(
+        indices=[atom.index for atom in cg_atoms],
+        direction=[0, 0, 1],  # only move in xy plane
+    )
+
+    cg_atoms.set_constraint(c)
+    ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=isotropic)
+
+    dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
+    dyn.run(fmax=fmax, steps=max_steps)
+    cg_atoms_o = cg_atoms.calc.get_atoms()
+    print(f"Relaxation time: {(time.time() - starttime):.2f} s")
+
+    return cg_atoms_o
+
+def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     from ase.constraints import FixedPlane
     from ase.optimize import BFGS
     from cgf.surrogate import MikadoRR
@@ -207,8 +241,8 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
 
     cg_atoms_o_ls.set_constraint(c)
 
-    dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory)
-    dyn.run(fmax=0.01)
+    dyn = BFGS(cg_atoms_o_ls, trajectory=trajectory, logfile=logfile)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o_pos = cg_atoms_o_ls.calc.get_atoms()
 
     ### thrid: optimize geometry and optimize linker sites
@@ -226,7 +260,50 @@ def geom_optimize_efficient(cg_atoms, calculator, trajectory=None):
     cg_atoms_o_pos.set_constraint(c)
 
     dyn = BFGS(cg_atoms_o_pos, trajectory=trajectory)
-    dyn.run(fmax=0.01)
+    dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms_o_pos.calc.get_atoms()
 
     return cg_atoms_o
+
+
+
+
+
+def numeric_stress_2D(atoms, d=1e-6, voigt=True):
+    """Based on ase numeric_stress calculation"""
+    stress = np.zeros((3, 3), dtype=float)
+
+    cell = atoms.cell.copy()
+    V = atoms.get_volume()
+    for i in range(2):
+        x = np.eye(3)
+        x[i, i] += d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eplus = atoms.get_potential_energy(force_consistent=True)
+
+        x[i, i] -= 2 * d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eminus = atoms.get_potential_energy(force_consistent=True)
+
+        stress[i, i] = (eplus - eminus) / (2 * d * V)
+        x[i, i] += d
+
+        j = i - 2
+        x[i, j] = d
+        x[j, i] = d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eplus = atoms.get_potential_energy(force_consistent=True)
+
+        x[i, j] = -d
+        x[j, i] = -d
+        atoms.set_cell(np.dot(cell, x), scale_atoms=True)
+        eminus = atoms.get_potential_energy(force_consistent=True)
+
+        stress[i, j] = (eplus - eminus) / (4 * d * V)
+        stress[j, i] = stress[i, j]
+    atoms.set_cell(cell, scale_atoms=True)
+
+    if voigt:
+        return stress.flat[[0, 4, 8, 5, 2, 1]]
+    else:
+        return stress
