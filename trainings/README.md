@@ -3,8 +3,8 @@ All training structures were performed with the following settings (unless state
 Contains stressed and relaxed structures of a unit cell of a COF unit cell in 'traj_training.traj'.
 
 The first structure is the cell-relaxed structure at 0 strain.
-The next 10 structures are isotropic strains from -1% to 1% (excluding 0%).
-The next 10 structures are shear strains (meaning positive(negative) strain along x and negative(positive) strain along y). From -1% to 1% (excluding 0%).
+The next 20 structures are isotropic strains from -1% to 1% (excluding 0%).
+The next 20 structures are shear strains (meaning positive(negative) strain along x and negative(positive) strain along y). From -1% to 1% (excluding 0%).
 
 In case DFTB calculations were performed, the following settings were used:
 With the following dftb settings with the matsci slater-koster files:
@@ -25,13 +25,8 @@ dftb_SinglePoint = {
             'Hamiltonian_Filling_': 'Fermi',
             'Hamiltonian_Filling_Temperature [K]': '100',
             }
-
-In case calculations with the AIREBO Force Field were performed, the following pair_stlye were used:
-
-pair_style          airebo 3.0 1 1
-pair_coeff          * * CH.airebo C H
-
+In case of dftb_noSCC the SCC calculations were turned off.
 
 All relaxation was performed with the SciPyFminBFGS algorithm with fmax=0.01 (see ASE documentation for details).
 
-The resulting fitted parameters are saved in 'training_model.json'.
+The resulting fitted parameters are saved in 'training_model_MikadoRR.json' and 'training_model_BAFF.json'.
