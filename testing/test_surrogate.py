@@ -7,7 +7,7 @@ from cgf.cgatoms import init_cgatoms, read_cgatoms
 from cgf.utils import geom_optimize, geom_optimize_efficient, cell_optimize
 from cgf.surrogate import MikadoRR
 
-test_data_path = Path('test-data').resolve()
+test_data_path = Path('testing/test-data').resolve()
 
 
 def test_MikadoRR_calc_SP_unit_cell():

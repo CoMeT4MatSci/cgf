@@ -5,7 +5,7 @@ from pathlib import Path
 from cgf.training_utils import get_rc_linkersites_beamfit, extract_features, train_model
 from ase.io import Trajectory
 
-test_data_path = Path('test-data').resolve()
+test_data_path = Path('testing/test-data').resolve()
 
 
 def test_training_COF5():
