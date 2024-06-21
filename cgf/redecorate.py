@@ -191,7 +191,7 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
     cg_atoms: ase atoms object of coarse-grained model that should be redecorated
     linker_atoms: ase atoms object of linker molecule. Must be aligned along x.
     core_atoms: ase atoms of core molecule (optional)
-    linkage_length: optional. If None, linkage_length from linker_neighbors taken. Otherwise scaled accordingly
+    linkage_length: optional. If None, linkage_length from linker_sites taken. Otherwise scaled accordingly
     
     Returns:
     ase atoms object
@@ -212,17 +212,36 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
         if isinstance(core_atoms.cell, Cell):
             # remove cell if present
             core_atoms.cell=None
-        core_atoms.center()
+        #core_atoms.center()
         for n, p in enumerate(positions):
             core_atoms_tmp = core_atoms.copy()
 
-            # get absolute orientation of node based on linker_sites
+            # get average absolute orientation of node based on linker_sites
             phi_0 = 0
-            for v2 in core_linker_dir[n]:
-                dot = np.dot(np.array([0, 1, 0]), v2)
-                det = np.cross(np.array([0, 1, 0]),v2)[2]
-                phi_0 += np.arctan2(det, dot) % np.pi/3
-            core_atoms_tmp.rotate('z', np.rad2deg(phi_0))
+            n_linkersites = len(core_linker_dir[n])
+            seen_ids = []
+
+            for m in range(n_linkersites):
+                phi_0s = []
+                ref_vec = np.array([0, 1, 0])
+                ref_vec = rot_ar_z(2*np.pi/n_linkersites*m) @ ref_vec
+                for v2 in core_linker_dir[n]:
+                    dot = np.dot(ref_vec, v2)
+                    det = np.cross(ref_vec, v2)[2]
+                    phi_0s.append(np.arctan2(det, dot))
+
+                sorted_phi_0s, sorted_ids = zip(*sorted(zip(list(np.abs(phi_0s)), list(range(len(phi_0s))))))
+                
+                for sid in sorted_ids:
+                    if sid in seen_ids:
+                        continue
+                    phi_0 += phi_0s[sid]
+                    break
+
+                seen_ids.append(sid)
+
+            core_atoms_tmp.rotate('z', np.rad2deg(phi_0/n_linkersites))
+
             core_atoms_tmp.translate(p)
             redecorated_atoms += core_atoms_tmp
 
@@ -272,7 +291,7 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             if linkage_length:
                 v2_nii = linkage_length * v2_nii/np.linalg.norm(v2_nii)
                 v2_ii = linkage_length * v2_ii/np.linalg.norm(v2_ii)
-            
+
             dot = np.dot(v1_nii,v2_nii)
             det = np.cross(v1_nii,v2_nii)[2]
             phi_nii = np.arctan2(det, dot)  # angle between neighbor_nii-core_ii vec and linker-site_nii vec
@@ -283,6 +302,7 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             # generate positions of the linkage sites based on phi and linkage_length
             linkage_site1 = positions[ii] + v2_ii
             linkage_site2 = positions[ii] + v1_ii + v2_nii
+            print(linkage_site1, positions[ii], v2_ii, np.linalg.norm(linkage_site1-positions[ii]))
             linkage_vec = linkage_site2 - linkage_site1
 
             len_x_linker = s.positions[:,0].max()-s.positions[:,0].min()  # linker len along x
@@ -306,7 +326,7 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
                 # displacement vector. Displaces atoms vertically along y and then shifts along normal_w
                 disp_vec = w(lens/len_linkage_vec, phi_ii, phi_nii) * np.array([0, 1, 0]) * len_linkage_vec  + nomal_w
                 disp_vec[1] -= sat.position[1]  # to correct if atoms are not y=0
-  
+
                 posnew.append([sat.position[0]+disp_vec[0], sat.position[1]+disp_vec[1], sat.position[2]])
             s.set_positions(posnew)
 
