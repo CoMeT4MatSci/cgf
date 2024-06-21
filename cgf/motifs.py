@@ -1,9 +1,15 @@
 import numpy as np
-from grandiso import find_motifs
+try:
+    import grandiso
+    OPTIONAL_PACKAGE_AVAILABLE = True
+except ImportError:
+    OPTIONAL_PACKAGE_AVAILABLE = False
 
 def find_unique_motifs(motif, G):
+    if not OPTIONAL_PACKAGE_AVAILABLE:
+        raise ImportError("The 'grandiso' package is required for this function. Please install it to proceed.")
     # find all motifs in graph
-    mfs = find_motifs(motif, G, isomorphisms_only=True)
+    mfs = grandiso.find_motifs(motif, G, isomorphisms_only=True)
     print(len(mfs))
 
     # eliminate duplicates (same nodes, different order)
