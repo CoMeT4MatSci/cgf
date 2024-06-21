@@ -1,11 +1,16 @@
 import numpy as np
-import networkx as nx
 
 from ase import Atoms
 from ase.io import read
 from ase.data import atomic_numbers, atomic_names, atomic_masses, covalent_radii
 
 from timeit import default_timer as timer
+
+try:
+    import networkx as nx
+    OPTIONAL_PACKAGE_AVAILABLE = True
+except ImportError:
+    OPTIONAL_PACKAGE_AVAILABLE = False
 
 def get_AC(atoms, covalent_factor=1.3, pbc=False):
     """
@@ -48,7 +53,8 @@ def get_AC(atoms, covalent_factor=1.3, pbc=False):
 
     
 def find_cycles(s, max_cycle_len=6):
-    
+    if not OPTIONAL_PACKAGE_AVAILABLE:
+        raise ImportError("The 'networkx' package is required for this function. Please install it to proceed.")
     print('--- start  graph construction ...')
     start = timer()    
     AC = get_AC(s, covalent_factor=1.3)    
@@ -100,6 +106,8 @@ def cycle_graph(cy, positions, max_cycle_len=6):
     # - Each node in the new graph is a cycle. 
     # - The respective nodes from the bigger graph are stored in the attribute 'cycle'. 
     # - Also the (real-space) positions are stored in 'pos'.
+    if not OPTIONAL_PACKAGE_AVAILABLE:
+        raise ImportError("The 'networkx' package is required for this function. Please install it to proceed.")
     G_cy = nx.Graph()
     for i in np.arange(len(cy)):
         if (len(cy[i]) <= max_cycle_len):

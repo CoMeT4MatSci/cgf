@@ -574,7 +574,7 @@ def _internal_gradient(p, cg_atoms, r0, rr_coeff, rr_incpt):
     nl = NeighborList( [1.2*r0/2] * len(cg_atoms), self_interaction=False, bothways=True)
     nl.update(cg_atoms)
 
-    bonds = _get_bonds(cg_atoms, r0, neighborlist=nl)
+    bonds = _get_bonds_old(cg_atoms, r0, neighborlist=nl)
     
     int_gradient = np.vstack([rr_coeff @ get_feature_internal_gradient(_get_core_descriptors(cg_atoms, r0, neighborlist=nl), 
                                                                        _get_bond_descriptors(cg_atoms, r0, bonds, neighborlist=nl), 
