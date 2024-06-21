@@ -220,29 +220,39 @@ class MikadoRR(Calculator):
 
 def _renormalize_linker_lengths(atoms, p, p0):
     # make sure that the distances to the linkage sites do not change
-    dim = np.sum(atoms.pbc)
-    if dim==2:  # if 2D
-        d = np.where(atoms.pbc==False)[0][0]  # index of out-of-plane dimension
-        p[:,:,d] = p0[:,:,d].copy()
-    else:
-        d = 3
-    if dim==2:
-        p_tmp = np.delete(p, np.s_[d], 2)
-        p0_tmp = np.delete(p0, np.s_[d], 2)
-    else:
-        p_tmp = p.copy()
-        p0_tmp = p0.copy()
-        scaling_factors = []
+
+    # old: eventually delete
+    # dim = np.sum(atoms.pbc)
+    # if dim==2:  # if 2D
+    #     d = np.where(atoms.pbc==False)[0][0]  # index of out-of-plane dimension
+    #     p[:,:,d] = p0[:,:,d].copy()
+    # else:
+    #     d = 3
+    # if dim==2:
+    #     p_tmp = np.delete(p, np.s_[d], 2)
+    #     p0_tmp = np.delete(p0, np.s_[d], 2)
+    # else:
+    #     p_tmp = p.copy()
+    #     p0_tmp = p0.copy()
+    #     scaling_factors = []
+    # scaling_factors = np.zeros(p.shape[:2])
+    # for i in range(p.shape[0]):
+    #     for j in range(p.shape[1]):
+    #         scaling_factors[i, j] = (np.linalg.norm(p0_tmp[i,j,:])/np.linalg.norm(p_tmp[i,j,:]))
+
+    # for k in range(p.shape[2]):
+    #     if k==d:
+    #         continue
+    #     p[:,:,k] *= scaling_factors
+
+    # new: sets z dim to 0. Works only for 2D
+    p[:,:,2] = 0
     scaling_factors = np.zeros(p.shape[:2])
     for i in range(p.shape[0]):
         for j in range(p.shape[1]):
-            scaling_factors[i, j] = (np.linalg.norm(p0_tmp[i,j,:])/np.linalg.norm(p_tmp[i,j,:]))
-
-    for k in range(p.shape[2]):
-        if k==d:
-            continue
+            scaling_factors[i, j] = (np.linalg.norm(p0[i,j,:])/np.linalg.norm(p[i,j,:]))    
+    for k in range(2):
         p[:,:,k] *= scaling_factors
-
     return p
 
 def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):
