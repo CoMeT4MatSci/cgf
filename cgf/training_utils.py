@@ -291,7 +291,7 @@ def get_rc_linkersites_beamfit(structure, id_groups, r0_beamfit, linkage_length,
 
             # find optimum angle of linker-site of core and its neighbor
             res = minimize(calc_mindistsq, [0, 0], 
-                    args=(r_c1, r_c2, atoms_tmp, linkage_length, False),
+                    args=(r_c1, r_c2, atoms_tmp, linkage_length),
                     options={'gtol': 1e-4, #'disp': True
                              })
             phi_ii, phi_nii = res.x
