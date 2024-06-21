@@ -95,9 +95,11 @@ def find_topology(cg_atoms, r0):
         for jj in range(len(neighbors)):
             neigh_id.append(neighbors[jj])
             dist_vec.append(distance_vectors[jj])  # vector from ii to jj
-
+        if len(neigh_id)!=3:
+            warnings.warn(f"Atom {ii} has {len(neigh_id)} instead of 3: {neigh_id}")
         neigh_ids.append(neigh_id)
         neigh_dist_vec.append(dist_vec)
+
     cg_atoms.set_array('neighbor_ids', np.array(neigh_ids))
     cg_atoms.set_array('neighbor_distances', np.array(neigh_dist_vec)) # distance from each cg_atom to its neighbors
 
@@ -294,8 +296,6 @@ def find_linker_neighbors(cg_atoms):
                 if np.abs(angle) < phi0/2:  
                     linker_neigh.append(li)
                     break
-        if len(linker_neigh)!=3:
-            warnings.warn(f"Atom {ii} has {len(linker_neigh)} instead of 3: {linker_neigh}")
         core_linker_neigh.append(linker_neigh)
 
     cg_atoms.set_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor
