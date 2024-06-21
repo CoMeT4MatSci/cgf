@@ -4,6 +4,7 @@ on: [push, pull_request]
 
 jobs:
   test:
+    timeout-minutes: 5 # Consider increasing timeout
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -19,7 +20,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install .[dev]
-          timeout-minutes: 5 # Consider increasing timeout
 
       - name: Get directory
         run: ls
