@@ -1,0 +1,36 @@
+[project]
+name = "cgf"
+version = "0.0.1"
+readme = "README.md"
+authors = [
+    {name = "David Bodesheim"},
+    {name = "Alexander Croy"}
+]
+description = "Coarse Grained Frameworks (cgf)"
+dependencies = [
+    "ase>=3.23",
+    "numpy",
+    "matplotlib",
+    "scikit-learn"
+]
+
+requires-python = ">=3.8"
+
+[project.optional-dependencies]  
+# for installation: pip install .[dev]
+dev = [
+    "pytest",
+]
+
+
+# for installation: pip install .[motifs]
+motifs = [
+    "grandiso",
+    "networkx"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]  # list of folders that contain the packages (["."] by default)
+
+[project.urls]
+homepage = "https://github.com/CoMeT4MatSci/cgf"
