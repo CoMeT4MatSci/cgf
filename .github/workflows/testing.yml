@@ -18,6 +18,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install .[dev]
+      - name: Get directory
+        run: ls
       - name: Run tests
         run: |
           pytest
