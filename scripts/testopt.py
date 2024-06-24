@@ -10,8 +10,8 @@ from ase.build import bulk
 
 sys.path.insert(0, '../')
 from cgf.cgatoms import *
-from cgf.surrogate import MikadoRR
-from cgf.surrogate_ref import MikadoRR as MikadoRR_V1
+from cgf.cgf.models.surrogate import MikadoRR
+from cgf.cgf.models.surrogate_ref import MikadoRR as MikadoRR_V1
 from cgf.utils import plot_cgatoms, geom_optimize, geom_optimize_efficient
 from cgf.cgatoms import _find_linker_neighbor
 
