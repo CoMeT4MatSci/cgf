@@ -49,10 +49,9 @@ def test_MikadoRR_calc_stress_unit_cell():
     cell[:,1] *= 1.1
     atoms.set_cell(cell, scale_atoms=True)
 
-    # Single Point without linker-sites optimization, but with reevaluate_topology=True
     calculator = MikadoRR(r0=r0, rr_coeff=np.array([-44.4342221, 1.27912546, 4.45880587, 4.45880586,
             4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, 
-            opt=False, update_linker_sites=True, reevaluate_topology=True)
+            opt=True, update_linker_sites=True, reevaluate_topology=True)
     cg_atoms = init_cgatoms(atoms.copy(), 2.46, r0=r0, linker_sites='nneighbors')
     cg_atoms.calc = calculator
 
@@ -72,7 +71,7 @@ def test_MikadoRR_cell_optimize_unit_cell():
     cell[1] *= 1.01
     atoms.set_cell(cell, scale_atoms=True)
 
-    # Single Point without linker-sites optimization, but with reevaluate_topology=True
+
     calculator = MikadoRR(r0=r0, rr_coeff=np.array([-44.4342221, 1.27912546, 4.45880587, 4.45880586,
             4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, 
             opt=False, update_linker_sites=True, reevaluate_topology=True)
@@ -92,18 +91,17 @@ def test_MikadoRR_cell_optimize_unit_cell():
     cell[1] *= 1.02
     atoms.set_cell(cell, scale_atoms=True)
 
-    # Single Point without linker-sites optimization, but with reevaluate_topology=True
+
     calculator = MikadoRR(r0=r0, rr_coeff=np.array([-44.4342221, 1.27912546, 4.45880587, 4.45880586,
             4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, 
-            opt=False, update_linker_sites=True, reevaluate_topology=True)
+            opt=True, update_linker_sites=True, reevaluate_topology=True)
     cg_atoms = init_cgatoms(atoms.copy(), 2.46, r0=r0, linker_sites='nneighbors')
     cg_atoms.calc = calculator
-    cg_atoms_o = cell_optimize(cg_atoms, calculator, isotropic=True)
-#     cg_atoms_o = cell_optimize(cg_atoms_o, calculator, isotropic=False)  # somehow cell collapes weirdly with non-isotropic relaxation and causes problems?
+    cg_atoms_o = cell_optimize(cg_atoms_o, calculator, isotropic=False)  
 
     assert cg_atoms_o.cell.cellpar()[0]<np.linalg.norm(cell[0])
     assert cg_atoms_o.cell.cellpar()[1]<np.linalg.norm(cell[1])
-#     assert cg_atoms_o.get_stress()==pytest.approx(np.zeros(cg_atoms_o.get_stress().shape), abs=1e-6)
+    assert cg_atoms_o.get_stress()==pytest.approx(np.zeros(cg_atoms_o.get_stress().shape), abs=1e-6)
 
 def test_MikadoRR_calc_SP_super_cell():
     r0=30.082756/np.sqrt(3)
@@ -163,12 +161,12 @@ def test_MikadoRR_calc_SW(tmp_path):
     cg_atoms = read_cgatoms(Path(test_data_path/'COF-5_opt_SW_cg.json'))
     calculator = MikadoRR(r0=r0, rr_coeff=np.array([-44.4342221, 1.27912546, 4.45880587, 4.45880586,
             4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, opt=True, update_linker_sites=True)
-    cg_atoms_o = geom_optimize(cg_atoms, calculator, trajectory='traj.traj')
+    cg_atoms_o = geom_optimize(cg_atoms, calculator)
 
     cg_atoms = read_cgatoms(Path(test_data_path/'COF-5_opt_SW_cg.json'))
     calculator = MikadoRR(r0=r0, rr_coeff=np.array([-44.4342221, 1.27912546, 4.45880587, 4.45880586,
             4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, opt=True, update_linker_sites=True)
-    cg_atoms_o_eff = geom_optimize_efficient(cg_atoms, calculator, trajectory='traj_eff.traj')
+    cg_atoms_o_eff = geom_optimize_efficient(cg_atoms, calculator)
     
     # check if the two geometry optimization methods yield same result
     assert cg_atoms_o_eff.get_potential_energy()==pytest.approx(cg_atoms_o.get_potential_energy(), abs=1e-4)==pytest.approx(11.530553279106243, abs=1e-4)
