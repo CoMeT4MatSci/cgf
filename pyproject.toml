@@ -23,10 +23,11 @@ dev = [
 ]
 
 
-# for installation: pip install .[motifs]
-motifs = [
+# for installation: pip install .[optional]
+optional = [
     "grandiso",
-    "networkx"
+    "networkx",
+    "rdkit"
 ]
 
 [tool.setuptools.packages.find]
