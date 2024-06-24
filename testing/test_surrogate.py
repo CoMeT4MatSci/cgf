@@ -1,11 +1,14 @@
-import pytest
 import os
-import numpy as np
 from pathlib import Path
+
+import numpy as np
+import pytest
 from ase.build import bulk
+
 from cgf.cgatoms import init_cgatoms, read_cgatoms
-from cgf.utils import geom_optimize, geom_optimize_efficient, cell_optimize
-from cgf.surrogate import MikadoRR
+from cgf.models.surrogate import MikadoRR
+from cgf.utils.geometry import (cell_optimize, geom_optimize,
+                                geom_optimize_efficient)
 
 test_data_path = Path('testing/test-data').resolve()
 

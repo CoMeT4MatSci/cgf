@@ -4,11 +4,11 @@ sys.path.insert(0, '../')
 import matplotlib.pyplot as plt
 
 from cgf.cgatoms import *
-from cgf.surrogate import MikadoRR, _find_linker_neighbor
-from cgf.cycles import find_cycles, cycle_graph
-from cgf.motifs import find_unique_motifs
+from cgf.models.surrogate import MikadoRR, _find_linker_neighbor
+from cgf.utils.cycles import find_cycles, cycle_graph
+from cgf.utils.motifs import find_unique_motifs
 from cgf.utils import remove_hatoms
-from cgf.bnff import _get_bonds
+from cgf.models.bnff import _get_bonds
 
 from ase.io import read
 from ase.constraints import FixedPlane
