@@ -7,7 +7,7 @@ from ase.build import bulk
 
 from cgf.cgatoms import init_cgatoms, read_cgatoms
 from cgf.models.baff import BAFFPotential
-from cgf.utils.geometry import (cell_optimize, geom_optimize)
+from cgf.utils.geometry import geom_optimize
 
 test_data_path = Path('testing/test-data').resolve()
 r0=17.352109548422437
@@ -59,7 +59,7 @@ def test_BAFFPotential_cell_optimize_unit_cell():
     calculator = BAFFPotential(r0=r0, Kbond=Kbond, Kangle=Kangle)
     cg_atoms = init_cgatoms(atoms.copy(), 2.46, r0=r0, linker_sites='nneighbors')
     cg_atoms.calc = calculator
-    cg_atoms_o = cell_optimize(cg_atoms, calculator, isotropic=True)
+    cg_atoms_o = geom_optimize(cg_atoms, calculator, optcell=True, isotropic=True)
 
     assert cg_atoms_o.cell.cellpar()[0]==pytest.approx(cg_atoms_o.cell.cellpar()[1])
     assert cg_atoms_o.cell.cellpar()[-1]==pytest.approx(120.)
@@ -76,7 +76,7 @@ def test_BAFFPotential_cell_optimize_unit_cell():
     calculator = BAFFPotential(r0=r0, Kbond=Kbond, Kangle=Kangle)
     cg_atoms = init_cgatoms(atoms.copy(), 2.46, r0=r0, linker_sites='nneighbors')
     cg_atoms.calc = calculator
-    cg_atoms_o = cell_optimize(cg_atoms_o, calculator, isotropic=False)  
+    cg_atoms_o = geom_optimize(cg_atoms_o, calculator, optcell=True, isotropic=False)  
 
     assert cg_atoms_o.cell.cellpar()[0]<np.linalg.norm(cell[0])
     assert cg_atoms_o.cell.cellpar()[1]<np.linalg.norm(cell[1])

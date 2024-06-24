@@ -7,8 +7,7 @@ from ase.build import bulk
 
 from cgf.cgatoms import init_cgatoms, read_cgatoms
 from cgf.models.surrogate import MikadoRR
-from cgf.utils.geometry import (cell_optimize, geom_optimize,
-                                geom_optimize_efficient)
+from cgf.utils.geometry import geom_optimize, geom_optimize_efficient
 
 test_data_path = Path('testing/test-data').resolve()
 
@@ -77,7 +76,7 @@ def test_MikadoRR_cell_optimize_unit_cell():
             opt=False, update_linker_sites=True, reevaluate_topology=True)
     cg_atoms = init_cgatoms(atoms.copy(), 2.46, r0=r0, linker_sites='nneighbors')
     cg_atoms.calc = calculator
-    cg_atoms_o = cell_optimize(cg_atoms, calculator, isotropic=True)
+    cg_atoms_o = geom_optimize(cg_atoms, calculator, optcell=True, isotropic=True)
 
     assert cg_atoms_o.cell.cellpar()[0]==pytest.approx(cg_atoms_o.cell.cellpar()[1])
     assert cg_atoms_o.cell.cellpar()[-1]==pytest.approx(120.)
@@ -97,7 +96,7 @@ def test_MikadoRR_cell_optimize_unit_cell():
             opt=True, update_linker_sites=True, reevaluate_topology=True)
     cg_atoms = init_cgatoms(atoms.copy(), 2.46, r0=r0, linker_sites='nneighbors')
     cg_atoms.calc = calculator
-    cg_atoms_o = cell_optimize(cg_atoms_o, calculator, isotropic=False)  
+    cg_atoms_o = geom_optimize(cg_atoms_o, calculator, optcell=True, isotropic=False)  
 
     assert cg_atoms_o.cell.cellpar()[0]<np.linalg.norm(cell[0])
     assert cg_atoms_o.cell.cellpar()[1]<np.linalg.norm(cell[1])

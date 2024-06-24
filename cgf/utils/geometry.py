@@ -7,8 +7,7 @@ from ase.optimize import BFGS
 import numpy as np
 
 
-def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
-
+def geom_optimize(cg_atoms, calculator, optcell=False, isotropic=False, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     
     starttime = time.time()
 
@@ -21,35 +20,17 @@ def geom_optimize(cg_atoms, calculator, trajectory=None, logfile=None, max_steps
     )
 
     cg_atoms.set_constraint(c)
-
-    dyn = BFGS(cg_atoms, trajectory=trajectory, logfile=logfile)
+    if optcell:
+        ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=isotropic)
+        dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
+    else:
+        dyn = BFGS(cg_atoms, trajectory=trajectory, logfile=logfile)
     dyn.run(fmax=fmax, steps=max_steps)
     cg_atoms_o = cg_atoms.calc.get_atoms()
     print(f"Relaxation time: {(time.time() - starttime):.2f} s")
 
     return cg_atoms_o
 
-def cell_optimize(cg_atoms, calculator, isotropic=False, trajectory=None, logfile=None, max_steps=1000, fmax=0.01):
-
-    starttime = time.time()
-
-    cg_atoms.calc = calculator
-
-    # for 2D optimization
-    c = FixedPlane(
-        indices=[atom.index for atom in cg_atoms],
-        direction=[0, 0, 1],  # only move in xy plane
-    )
-
-    cg_atoms.set_constraint(c)
-    ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=isotropic)
-
-    dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
-    dyn.run(fmax=fmax, steps=max_steps)
-    cg_atoms_o = cg_atoms.calc.get_atoms()
-    print(f"Relaxation time: {(time.time() - starttime):.2f} s")
-
-    return cg_atoms_o
 
 def geom_optimize_efficient(cg_atoms, calculator, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
     from ase.constraints import FixedPlane
