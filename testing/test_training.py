@@ -1,9 +1,12 @@
-import pytest
 import os
-import numpy as np
 from pathlib import Path
-from cgf.training_utils import get_rc_linkersites_beamfit, extract_features, train_model
+
+import numpy as np
+import pytest
 from ase.io import Trajectory
+
+from cgf.utils.training import (extract_features, get_rc_linkersites_beamfit,
+                                train_model)
 
 test_data_path = Path('testing/test-data').resolve()
 

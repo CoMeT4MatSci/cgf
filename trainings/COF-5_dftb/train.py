@@ -4,7 +4,7 @@ import os
 import networkx as nx
 import numpy as np
 from ase.io import read
-from cgf.training_utils import extract_features, train_model
+from cgf.utils.training import extract_features, train_model
 from cgf.utils import remove_hatoms
 
 structures = []
