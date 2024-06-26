@@ -264,7 +264,7 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             # generate positions of the linkage sites based on phi and linkage_length
             linkage_site1 = positions[ii] + v2_ii
             linkage_site2 = positions[ii] + v1_ii + v2_nii
-            print(linkage_site1, positions[ii], v2_ii, np.linalg.norm(linkage_site1-positions[ii]))
+
             linkage_vec = linkage_site2 - linkage_site1
 
             len_x_linker = s.positions[:,0].max()-s.positions[:,0].min()  # linker len along x

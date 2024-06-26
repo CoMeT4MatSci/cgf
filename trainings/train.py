@@ -29,7 +29,7 @@ for n, atoms in enumerate(traj):
     structures.append(atoms)
     if 1.2*r0>=atoms.cell.cellpar()[2]:
         cellnew = atoms.cell
-        cellnew[2] = 2*r0
+        cellnew[2][2] = 2*r0
         atoms.set_cell(cellnew)
 energies = np.array(energies)
 
