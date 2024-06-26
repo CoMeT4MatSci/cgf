@@ -206,7 +206,7 @@ def find_linker_sites_guess_best_angles(cg_atoms, linkage_length):
         # rotate vectors by phi_0
         ls_new = []
         for ls in linker_sites_tmp:
-            ls_new.append(rot_matrix(phi_0) @ ls)
+            ls_new.append(rot_matrix(phi_0[0]) @ ls)
 
         # calculate square sum of angles to respecitve vector to NN
         phi_sqsum = 0
@@ -247,11 +247,11 @@ def find_linker_sites_guess_best_angles(cg_atoms, linkage_length):
         # apply new angle
         linker_dir = []
         for ls in linker_dir_tmp:
-           linker_dir.append(rot_matrix(phi_0_new) @ ls)
+           linker_dir.append(rot_matrix(phi_0_new[0]) @ ls)
         
         core_linker_dir.append(linker_dir)
 
-    cg_atoms.set_array('linker_sites', np.array(core_linker_dir, dtype=np.float))  # add positions of linker sites relative to core center
+    cg_atoms.set_array('linker_sites', np.array(core_linker_dir, dtype=float))  # add positions of linker sites relative to core center
 
     return cg_atoms
 
@@ -302,7 +302,7 @@ def find_linker_neighbors(cg_atoms):
     
     return cg_atoms
 
-def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors'):
+def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors', auto_z_height_correction=True):
     """
     Initialize a CG ase Atoms object. Makes an initial guess for 'linker_sites'.
     
@@ -316,7 +316,11 @@ def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors'):
     Returns:
     ASE atoms object with additional arrays 'linker_sites', 'neighbor_distances', 'neighbor_ids' and 'linker_neighbors' which are used in CG Models
     """
-
+    if auto_z_height_correction:
+        if 1.2*r0>=cg_atoms.cell.cellpar()[2]:
+            cellnew = cg_atoms.cell
+            cellnew[2][2] = 2*r0
+            cg_atoms.set_cell(cellnew)
     cg_atoms = find_topology(cg_atoms, r0)  # setting 'neighbor_ids'
     if linker_sites=='nneighbors':
         cg_atoms = find_linker_sites_guess_nneighbors(cg_atoms, linkage_length)  # setting 'linker_sites'
