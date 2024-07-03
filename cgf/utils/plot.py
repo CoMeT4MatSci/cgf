@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from cgf.cgf.utils.redecorate import w
+from cgf.utils.redecorate import w
 
 def plot_cgatoms(cg_atoms, fig=None, ax=None,
                 plot_beam=True, 
