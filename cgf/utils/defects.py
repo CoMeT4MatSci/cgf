@@ -198,8 +198,8 @@ def generate_558_GB2(reference_cell, y_super=1):
     inds = [a.index for a in gb if np.isclose(a.position[1], np.max(gb.positions[:,1]))]
     gb.positions[inds] += cell[1]/4 - np.array([0, 0.5, 0])
     gb.set_cell(cell)
-    gb += Atom('Y', position=[3.4, 2*cell[1][1]/3 - 0.7, 1.5])
-    gb += Atom('Y', position=[16.4, 2*cell[1][1]/3 - 0.7, 1.5])
+    gb += Atom('Y', position=[3.0, 2*cell[1][1]/3 - 0.7, 1.5])
+    gb += Atom('Y', position=[16.8, 2*cell[1][1]/3 - 0.7, 1.5])
     gb.set_cell(P@reference_cell, scale_atoms=True)
     gb.positions[:,2] = 1.5
 
