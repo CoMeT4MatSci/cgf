@@ -95,13 +95,15 @@ with open(Path(path, '../id_groups_cores.json'), 'r') as inp:
     id_groups = json.load(inp)['id_groups']
 
 # get coeffs with all available structures
-results = get_optimal_coeffs(r0, structures, energies, id_groups=id_groups, width=4)
+results = get_optimal_coeffs(r0*1.2, structures, energies, id_groups=id_groups, width=4)
 training_model = results['opt_training_model']
-print('----- \n Optimal training model MikadoRR: \n', training_model)
+if training_model==None:
+    print('----- \n No optimal training model MikadoRR found...\n')
+else:
+    print('----- \n Optimal training model MikadoRR: \n', training_model)
 
-
-with open(Path(path,'training_model_MikadoRR.json'), 'w') as fp:
-    json.dump(training_model, fp)
+    with open(Path(path,'training_model_MikadoRR.json'), 'w') as fp:
+        json.dump(training_model, fp)
 with open(Path(path,'all_training_results_MikadoRR.json'), 'w') as fp:
     json.dump(results, fp)
 

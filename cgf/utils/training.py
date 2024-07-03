@@ -407,7 +407,7 @@ def get_learning_curve(training_structures,
     return n_training_structures, MSE_training, MSE_test
 
 def get_optimal_coeffs(r0, structures, energies, id_groups, width=4):
-    linkage_lengths = np.linspace(0.1, r0/2, 20)
+    linkage_lengths = np.linspace(0.1, r0/2, 30)
     ls = []
     training_models = []
     t_ID = 0
@@ -429,8 +429,8 @@ def get_optimal_coeffs(r0, structures, energies, id_groups, width=4):
             ls.append(l)
             t_IDs.append(t_ID)
             t_ID += 1
-        except IndexError:
-            print('Training failed')
+        except (IndexError, ValueError) as err:  # this can happen for example when it's not possible to find all linker-neighbors due to bad beam-fit
+            print('Training failed: ', err)
 
     scores = [tm['cross_val_score_mean'] for tm in training_models]
     scores, t_IDs = zip(*sorted(zip(scores, t_IDs), reverse=True))
@@ -440,11 +440,15 @@ def get_optimal_coeffs(r0, structures, energies, id_groups, width=4):
     results['training_models'] = training_models
     results['sorted_scores'] = scores
     results['sorted_IDs'] = t_IDs
+    results['opt_training_model'] = None
     for t in t_IDs:
         zero_coeffs = [c for c in training_models[t]['rr_coeff'] if np.isclose(c, 0)]
         if len(zero_coeffs)>0:
             continue
         if training_models[t]['rr_coeff'][-1]<0:
             continue
+        if training_models[t]['rr_coeff'][2]<0:  # might cause trouble for non-linear linkages?
+            continue
         results['opt_training_model'] = training_models[t]
         return results
+    return results  # in case no opt_training_model was found
