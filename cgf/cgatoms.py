@@ -60,7 +60,7 @@ def _find_linker_neighbor(cg_atoms, r0, neighborlist=None):
     cg_atoms.set_array('linker_neighbors', np.array(core_linker_neigh)) # add linker site id for each neighbor
     return np.array(neigh_dist_vec)
 
-def find_topology(cg_atoms, r0):
+def find_topology(cg_atoms, r0, nn_scaling=1.2):
     """
     finds the topology of cg_atoms, meaning setting the 'neighbor_ids' and 'neighbor_distances'
     arrays of cg_atom 
@@ -76,16 +76,17 @@ def find_topology(cg_atoms, r0):
     cell = cg_atoms.cell
     positions = cg_atoms.positions
 
-    nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True, 
+    nl = NeighborList( [nn_scaling*r0/2] * natoms, self_interaction=False, bothways=True, 
                       primitive=NewPrimitiveNeighborList,
                       #primitive=PrimitiveNeighborList,
                       )
     nl.update(cg_atoms)
-
     neigh_ids = []
     neigh_dist_vec = []    
     for ii in range(natoms):
         neighbors, offsets = nl.get_neighbors(ii)
+        if len(neighbors)!=3:
+            warnings.warn(f"Number of neighbors != 3:  {neighbors}")
         cells = np.dot(offsets, cell)
         distance_vectors = positions[neighbors] + cells - positions[ii]
 
@@ -128,6 +129,8 @@ def find_neighbor_distances(cg_atoms):
     neigh_dist_vec = []    
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
+        if len(neighbors)!=3:
+            raise Exception(f"More than three neighbors! {neighbors}")
         distance_vectors = mic(positions[neighbors] - positions[ii], cell)  # minimum image convention
 
         dist_vec = []
@@ -302,7 +305,7 @@ def find_linker_neighbors(cg_atoms):
     
     return cg_atoms
 
-def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors', auto_z_height_correction=True):
+def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors', auto_z_height_correction=True, nn_scaling=1.2):
     """
     Initialize a CG ase Atoms object. Makes an initial guess for 'linker_sites'.
     
@@ -321,7 +324,7 @@ def init_cgatoms(cg_atoms, linkage_length, r0, linker_sites='nneighbors', auto_z
             cellnew = cg_atoms.cell
             cellnew[2][2] = 2*r0
             cg_atoms.set_cell(cellnew)
-    cg_atoms = find_topology(cg_atoms, r0)  # setting 'neighbor_ids'
+    cg_atoms = find_topology(cg_atoms, r0, nn_scaling)  # setting 'neighbor_ids'
     if linker_sites=='nneighbors':
         cg_atoms = find_linker_sites_guess_nneighbors(cg_atoms, linkage_length)  # setting 'linker_sites'
     elif linker_sites=='best_angles':

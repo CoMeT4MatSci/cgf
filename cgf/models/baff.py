@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 from ase.calculators.calculator import Calculator
 from ase.neighborlist import NeighborList
 
@@ -24,8 +25,11 @@ class BAFFPotential(Calculator):
                           'cosT0': -0.5}
     nolabel = True
 
-    def __init__(self, **kwargs):
+    def __init__(self, nn_scaling=1.2, **kwargs):
         """
+        nn_scaling: float
+            scaling factor for the nearest neighbor cutoff distance. Defaults to 1.2
+
         Parameters
         ----------
         Kbond: float
@@ -40,6 +44,7 @@ class BAFFPotential(Calculator):
         Calculator.__init__(self, **kwargs)
 
         self.nl = None
+        self.nn_scaling = nn_scaling
 
     def calculate(self, atoms=None, properties=implemented_properties,
                   system_changes=['positions', 'numbers', 'cell',
@@ -57,7 +62,7 @@ class BAFFPotential(Calculator):
         cosT0 = self.parameters.cosT0
 
         if self.nl == None:
-            self.nl = NeighborList( [1.2*r0/2] * natoms, self_interaction=False, bothways=True)
+            self.nl = NeighborList( [self.nn_scaling*r0/2] * natoms, self_interaction=False, bothways=True)
         self.nl.update(self.atoms)
 
         forces = np.zeros((natoms, 3))
@@ -65,6 +70,8 @@ class BAFFPotential(Calculator):
         # iterate over all atoms
         for ii in np.arange(natoms):
             neighbors, offsets = self.nl.get_neighbors(ii)
+            if len(neighbors)!=3:
+                warnings.warn(f"Number of neighbors != 0:  {neighbors}")
             cells = np.dot(offsets, cell)
             distance_vectors = positions[neighbors] + cells - positions[ii]
 

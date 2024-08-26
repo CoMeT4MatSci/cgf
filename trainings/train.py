@@ -21,6 +21,7 @@ if args.r0 is not None:
     r0 = args.r0
 else:
     r0 = traj[0].cell.cellpar()[0]/np.sqrt(3)  # works for hexagonal unit cells
+print(r0, traj[0].cell.cellpar())
 structures = []
 energies = []
 for n, atoms in enumerate(traj):
@@ -95,7 +96,7 @@ with open(Path(path, '../id_groups_cores.json'), 'r') as inp:
     id_groups = json.load(inp)['id_groups']
 
 # get coeffs with all available structures
-results = get_optimal_coeffs(r0*1.2, structures, energies, id_groups=id_groups, width=4)
+results = get_optimal_coeffs(r0, structures, energies, id_groups=id_groups, width=4)
 training_model = results['opt_training_model']
 if training_model==None:
     print('----- \n No optimal training model MikadoRR found...\n')
