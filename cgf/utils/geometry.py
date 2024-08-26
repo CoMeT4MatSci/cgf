@@ -7,7 +7,7 @@ from ase.optimize import BFGS
 import numpy as np
 
 
-def geom_optimize(cg_atoms, calculator, optcell=False, isotropic=False, trajectory=None, logfile=None, max_steps=500, fmax=0.01):
+def geom_optimize(cg_atoms, calculator, optcell=False, isotropic=False, trajectory=None, logfile=None, max_steps=1000, fmax=0.01, mask=[True, True, False, False, False, True]):
     
     starttime = time.time()
 
@@ -21,7 +21,7 @@ def geom_optimize(cg_atoms, calculator, optcell=False, isotropic=False, trajecto
 
     cg_atoms.set_constraint(c)
     if optcell:
-        ecf = FrechetCellFilter(cg_atoms, mask=[True, True, False, False, False, True], hydrostatic_strain=isotropic)
+        ecf = FrechetCellFilter(cg_atoms, mask=mask, hydrostatic_strain=isotropic)
         dyn = BFGS(ecf, trajectory=trajectory, logfile=logfile)
     else:
         dyn = BFGS(cg_atoms, trajectory=trajectory, logfile=logfile)
