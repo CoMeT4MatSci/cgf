@@ -5,6 +5,8 @@ from cgf.utils.redecorate import w
 def plot_cgatoms(cg_atoms, fig=None, ax=None,
                 plot_beam=True, 
                 plot_linker_sites=True,
+                linkage_length='auto',
+                beam_from_linkage=False,
                 plot_neighbor_connections=False,
                 plot_cell=True,
                 savefigname=None):
@@ -14,6 +16,11 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
         cg_atoms: cg_atoms with decorated new arrays
         fig (_type_, optional): fig object for subplots. Defaults to None. If None, new one is inilialized.
         ax (_type_, optional): ax object for subplots. Defaults to None. If None, new one is initialized.
+        plot_beam (bool, optional): plots the elastic beam based on the linker-sites.
+        linkage_length(str or float, optional): if 'auto' then linkage length determined by cg_atoms. Otherwise set to float value.
+        beam_from_linkage(bool, optional): if True, the beam is calculated and plotted from the linkage to linkage, not cores to core.
+        plot_neighbor_connections(bool, optional): if True, plots direct connections between neighbors. Good for bugfixing.
+        plot_cell(bool, optional): if True, unit cell is plotted 
         savefigname (str, optional): Name of file to save image to. Defaults to None.
 
     Returns:
@@ -34,7 +41,7 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
     if not ax:
         ax = fig.add_subplot(111, aspect='equal')
 
-    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=150/np.sqrt(len(cg_atoms)), zorder=10)
+    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=50/np.sqrt(len(cg_atoms)), zorder=10)
 
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
@@ -47,10 +54,14 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
             # and the linker_site vector of core ii in that direction
             cln = core_linker_neigh[ii][jj]
             v1_ii = neigh_dist_vec[ii][jj]  # vec from ii to neighbor nii
-            v2_ii = core_linker_dir[ii][cln]  # linker_site vec from ii in direction of nii
+            if linkage_length=='auto':
+                v2_ii = core_linker_dir[ii][cln]  # linker_site vec from ii in direction of nii from cg_atoms object
+            else:
+                v2_ii = core_linker_dir[ii][cln]/np.linalg.norm(core_linker_dir[ii][cln]) * linkage_length  # linker_site vec from ii in direction of nii scaled
+
             dot = np.dot(v1_ii,v2_ii)
             det = np.cross(v1_ii,v2_ii)[2]
-            phi_ii = np.arctan2(det, dot)
+            psi_ii = np.arctan2(det, dot)
 
             # calculate the angle between the vector between the neighbor and core ii
             # and the linker_site vector of the neighbor in that direction
@@ -62,16 +73,25 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
                 if np.allclose(v1_ii+v1_nii, np.zeros(3)):  # check if two vectors opposing each other (if v1_nii=-v1_ii)
                     cln_nii = core_linker_neigh[n_ii][kk]  # linker_site vec from nii in direction of ii
                     break
-                        
-            v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec from nii in direction of ii
+
+            if linkage_length=='auto':    
+                v2_nii = core_linker_dir[n_ii][cln_nii]  # linker_site vec from nii in direction of ii from cg_atoms object
+            else:
+                v2_nii = core_linker_dir[n_ii][cln_nii]/np.linalg.norm(core_linker_dir[n_ii][cln_nii]) * linkage_length  # linker_site vec from nii in direction of ii scaled
+                
             dot = np.dot(v1_nii,v2_nii)
             det = np.cross(v1_nii,v2_nii)[2]
-            phi_nii = np.arctan2(det, dot)
+            psi_nii = np.arctan2(det, dot)
 
-            # generate positions of the linkage sites based on phi and linkage_length
-            linkage_site1 = positions[ii] + v2_ii
-            linkage_site2 = positions[ii] + v1_ii + v2_nii
-            linkage_vec = linkage_site2 - linkage_site1
+            # generate positions of the linkage sites based on psi and linkage_length
+            if beam_from_linkage:
+                linkage_site1 = positions[ii] + v2_ii
+                linkage_site2 = positions[ii] + v1_ii + v2_nii
+                linkage_vec = linkage_site2 - linkage_site1
+            else:
+                linkage_site1 = positions[ii]
+                linkage_site2 = positions[ii] + v1_ii 
+                linkage_vec = linkage_site2 - linkage_site1
 
 
             xs = np.linspace(linkage_site1[0],
@@ -87,20 +107,20 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
             xnew = []; ynew = []
             for x, y in zip(xs, ys):
                 lens = np.sqrt((xs[0]-x)**2 + (ys[0]-y)**2)
-                disp_vec = normal * w(lens/norm, phi_ii, phi_nii)
+                disp_vec = normal * w(lens/norm, psi_ii, psi_nii)
                 xnew.append(x+disp_vec[0])
                 ynew.append(y+disp_vec[1])
             if plot_beam:
                 ax.plot(xnew, ynew,
-                        color='lightsteelblue', linewidth=50/np.sqrt(len(cg_atoms)), zorder=-1)
+                        color='lightsteelblue', linewidth=10/np.sqrt(len(cg_atoms)), zorder=-1)
 
             if plot_neighbor_connections:
                 ax.plot([positions[ii][0], positions[ii][0] + v1_ii[0]],
                         [positions[ii][1], positions[ii][1] + v1_ii[1]], 
-                        color='blue', zorder=5)
+                        color='blue', zorder=5, linewidth=3/np.sqrt(len(cg_atoms)))
             if plot_linker_sites:
-                ax.arrow(positions[ii,0],positions[ii,1], core_linker_dir[ii,cln,0], core_linker_dir[ii,cln,1], 
-            color='darkred', head_width=0.5, head_length=0.5, lw=3, zorder=10, alpha=0.8)
+                ax.arrow(positions[ii,0],positions[ii,1], v2_ii[0], v2_ii[1], 
+            color='darkred', head_width=1/np.sqrt(len(cg_atoms)), head_length=1/np.sqrt(len(cg_atoms)), lw=5/np.sqrt(len(cg_atoms)), zorder=10, alpha=0.8)
 
     if plot_cell:  # simulation cell
         ax.plot([0., cell.array[0,0]], [0., cell.array[0,1]], color='grey')
