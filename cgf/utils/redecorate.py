@@ -5,26 +5,26 @@ from cgf.models.bnff import _get_phi0
 from cgf.utils.geometry import rot_ar_z, get_left_right
 
 
-def w(x, phi0=0., phi1=0.):
+def w(x, psi0=0., psi1=0.):
     '''
     Vertical displacement of elastic beam.
     
     Inputs:
     x: normalized point(s) along beam [0,1]
-    phi0: angle at core 0
-    phi1: angle at core 1
+    psi0: angle at core 0
+    psi1: angle at core 1
     
     Returns:
     Vertical displacements
     '''
-    return (x**2 - 2*x + 1)*x*phi0 + (x - 1)*x**2*phi1
+    return (x**2 - 2*x + 1)*x*psi0 + (x - 1)*x**2*psi1
 
-def dwdx(x, phi0=0., phi1=0.):
+def dwdx(x, psi0=0., psi1=0.):
     '''
     Derivative of vertical displacement of elastic beam dw/dx
     '''
     
-    return (3*x**2 - 4*x + 1)*phi0 + (3*x**2 - 2*x)*phi1
+    return (3*x**2 - 4*x + 1)*psi0 + (3*x**2 - 2*x)*psi1
 
 
 def redecorate_cg_atoms_depricated(cg_atoms, linker_atoms, r0):
@@ -143,7 +143,7 @@ def redecorate_cg_atoms_depricated(cg_atoms, linker_atoms, r0):
 
 
 
-def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=None):
+def redecorate_cg_atoms(cg_atoms, linker_atoms=None, core_atoms=None, linkage_length=None):
     '''
     Redecorates coarse-grained model with real atoms.
     DOES NOT YET WORK FOR SMALL UNIT CELLS!
@@ -179,37 +179,41 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             core_atoms_tmp = core_atoms.copy()
 
             # get average absolute orientation of node based on linker_sites
-            phi_0 = 0
+            # average absolute orientation compared to [0, 1, 0] vector
+            chi_0 = 0
             n_linkersites = len(core_linker_dir[n])
             seen_ids = []
 
             for m in range(n_linkersites):
-                phi_0s = []
+                chi_0s = []
                 ref_vec = np.array([0, 1, 0])
                 ref_vec = rot_ar_z(2*np.pi/n_linkersites*m) @ ref_vec
                 for v2 in core_linker_dir[n]:
                     dot = np.dot(ref_vec, v2)
                     det = np.cross(ref_vec, v2)[2]
-                    phi_0s.append(np.arctan2(det, dot))
+                    chi_0s.append(np.arctan2(det, dot))
 
-                sorted_phi_0s, sorted_ids = zip(*sorted(zip(list(np.abs(phi_0s)), list(range(len(phi_0s))))))
+                # now check which linkersite-vector is closest to rotated ref_vec
+                sorted_chi_0s, sorted_ids = zip(*sorted(zip(list(np.abs(chi_0s)), list(range(len(chi_0s))))))
                 
                 for sid in sorted_ids:
                     if sid in seen_ids:
                         continue
-                    phi_0 += phi_0s[sid]
+                    chi_0 += chi_0s[sid]
                     break
 
                 seen_ids.append(sid)
 
-            core_atoms_tmp.rotate('z', np.rad2deg(phi_0/n_linkersites))
+            core_atoms_tmp.rotate('z', np.rad2deg(chi_0/n_linkersites))
 
             core_atoms_tmp.translate(p)
             redecorated_atoms += core_atoms_tmp
+        if not linker_atoms:  # if redecoration should be purely based on core atoms only
+            return redecorated_atoms
 
     if isinstance(linker_atoms.cell, Cell):
         # remove cell if present
-        linker_atoms.cell=None
+        linker_atoms.cell = None
     linker_atoms.center()
     left, right = get_left_right(linker_atoms, natoms=1)
     linker_atoms.translate([-linker_atoms.get_positions()[left[0]][0], 0, 0])  # shift so that linker_atoms start at x=0
@@ -235,7 +239,7 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             v2_ii = core_linker_dir[ii][cln]  # linker_site vec from ii in direction of nii
             dot = np.dot(v1_ii,v2_ii)
             det = np.cross(v1_ii,v2_ii)[2]
-            phi_ii = np.arctan2(det, dot)
+            psi_ii = np.arctan2(det, dot)
 
             # calculate the angle between the vector between the neighbor and core ii
             # and the linker_site vector of the neighbor in that direction
@@ -256,12 +260,12 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
 
             dot = np.dot(v1_nii,v2_nii)
             det = np.cross(v1_nii,v2_nii)[2]
-            phi_nii = np.arctan2(det, dot)  # angle between neighbor_nii-core_ii vec and linker-site_nii vec
+            psi_nii = np.arctan2(det, dot)  # angle between neighbor_nii-core_ii vec and linker-site_nii vec
 
             
             s = linker_atoms.copy()
 
-            # generate positions of the linkage sites based on phi and linkage_length
+            # generate positions of the linkage sites based on psi and linkage_length
             linkage_site1 = positions[ii] + v2_ii
             linkage_site2 = positions[ii] + v1_ii + v2_nii
 
@@ -280,13 +284,13 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
                 lens = sat.position[0]
 
                 # calculate the normal along the bent beam. To properly shift atoms that are not at y=0
-                m = dwdx(lens/len_linkage_vec, phi_ii, phi_nii)
+                m = dwdx(lens/len_linkage_vec, psi_ii, psi_nii)
                 nomal_w = np.array([-m, 1, 0])
                 nomal_w /= np.linalg.norm(nomal_w)
                 nomal_w *= sat.position[1]
 
                 # displacement vector. Displaces atoms vertically along y and then shifts along normal_w
-                disp_vec = w(lens/len_linkage_vec, phi_ii, phi_nii) * np.array([0, 1, 0]) * len_linkage_vec  + nomal_w
+                disp_vec = w(lens/len_linkage_vec, psi_ii, psi_nii) * np.array([0, 1, 0]) * len_linkage_vec  + nomal_w
                 disp_vec[1] -= sat.position[1]  # to correct if atoms are not y=0
 
                 posnew.append([sat.position[0]+disp_vec[0], sat.position[1]+disp_vec[1], sat.position[2]])
@@ -296,13 +300,13 @@ def redecorate_cg_atoms(cg_atoms, linker_atoms, core_atoms=None, linkage_length=
             # rotating linker to v1_ii
             dot = np.dot(v1_ii, np.array([1, 0, 0]))  # assumes initial linker orientation along x
             det = np.cross(v1_ii,  np.array([1, 0, 0]))[2]
-            phi_v1_ii = np.arctan2(det, dot)
+            psi_v1_ii = np.arctan2(det, dot)
             # rotate to linkage_vec
             dot = np.dot(v1_ii, linkage_vec)  
             det = np.cross(v1_ii,  linkage_vec)[2]
-            phi_linkage_vec = np.arctan2(det, dot)
+            psi_linkage_vec = np.arctan2(det, dot)
             
-            s.rotate(-(phi_v1_ii-phi_linkage_vec) * 180/np.pi, 'z')
+            s.rotate(-(psi_v1_ii-psi_linkage_vec) * 180/np.pi, 'z')
 
             # translating pos of core along vector to neigh core
             s.translate(positions[ii]+v2_ii)  

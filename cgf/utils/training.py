@@ -209,16 +209,16 @@ def get_rc_linkersites_beamfit(structure, id_groups, r0_beamfit, linkage_length,
         return np.isclose(area_ABCD,area_AB_M + area_BC_M + area_CD_M + area_DA_M)
 
 
-    def calc_mindistsq(phis, r_c1, r_c2, atoms, linkage_length):
+    def calc_mindistsq(psis, r_c1, r_c2, atoms, linkage_length):
         # calculates the sum of minimum square distances of atoms to beam
 
-        phi_ii, phi_nii = phis
+        psi_ii, psi_nii = psis
         vec_rc = r_c2 - r_c1  # vec between two cores
         norm_rc = np.linalg.norm(vec_rc)
         
-        # generate positions of the linkage sites based on phi and linkage_length
-        linkage_site1 = r_c1 + rot_ar_z(phi_ii) @ vec_rc / norm_rc * linkage_length
-        linkage_site2 = r_c2 + rot_ar_z(phi_nii) @ -vec_rc / norm_rc * linkage_length
+        # generate positions of the linkage sites based on psi and linkage_length
+        linkage_site1 = r_c1 + rot_ar_z(psi_ii) @ vec_rc / norm_rc * linkage_length
+        linkage_site2 = r_c2 + rot_ar_z(psi_nii) @ -vec_rc / norm_rc * linkage_length
 
         # make beam between linkage sites of the two cores
         xs = np.linspace(linkage_site1[0], linkage_site2[0], 100)
@@ -229,7 +229,7 @@ def get_rc_linkersites_beamfit(structure, id_groups, r0_beamfit, linkage_length,
         for n, xy in enumerate(zip(xs, ys)):
             x, y = xy
             lens = np.sqrt((xs[0]-x)**2 + (ys[0]-y)**2)
-            disp_vec = w(lens/norm, phi_ii, phi_nii) * normal
+            disp_vec = w(lens/norm, psi_ii, psi_nii) * normal
             xbeam[n] = x+disp_vec[0]
             ybeam[n] = y+disp_vec[1]
 
@@ -301,11 +301,11 @@ def get_rc_linkersites_beamfit(structure, id_groups, r0_beamfit, linkage_length,
                     args=(r_c1, r_c2, atoms_tmp, linkage_length),
                     options={'gtol': 1e-4, #'disp': True
                              })
-            phi_ii, phi_nii = res.x
+            psi_ii, psi_nii = res.x
 
             # create core_linker_dir for core and neighbor
-            core_linker_dir[ii][jj] = rot_ar_z(phi_ii) @ (v1_ii/np.linalg.norm(v1_ii))*linkage_length
-            core_linker_dir[neighbors[jj]][jj] = rot_ar_z(phi_nii) @ (-v1_ii/np.linalg.norm(v1_ii))*linkage_length
+            core_linker_dir[ii][jj] = rot_ar_z(psi_ii) @ (v1_ii/np.linalg.norm(v1_ii))*linkage_length
+            core_linker_dir[neighbors[jj]][jj] = rot_ar_z(psi_nii) @ (-v1_ii/np.linalg.norm(v1_ii))*linkage_length
             
             # keep track of combinations to avoid double evaluation
             combinations.append([ii, jj])
