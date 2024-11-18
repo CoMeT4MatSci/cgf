@@ -261,10 +261,6 @@ def _energy_gradient_internal(p, cg_atoms, rr_coeff, rr_incpt):
     p = p.reshape(p0.shape)
 
 
-    if np.sum(cg_atoms.pbc)==2:  # if 2D
-        d = np.where(cg_atoms.pbc==False)[0][0]
-        p[:,:,d] = p0[:,:,d].copy()  # make sure that out of plane stays the same
-
     cg_atoms.set_array('linker_sites', p)
 
     # get descriptors
