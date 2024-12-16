@@ -35,13 +35,14 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
     core_linker_neigh = cg_atoms.get_array('linker_neighbors')
     neigh_ids = cg_atoms.get_array('neighbor_ids')
     neigh_dist_vec = cg_atoms.get_array('neighbor_distances')
+    scaling_factor = 100/np.sqrt(cg_atoms.get_volume()/cg_atoms.cell[2][2])
 
     if not fig:
         fig = plt.figure(figsize=(10,10))
     if not ax:
         ax = fig.add_subplot(111, aspect='equal')
 
-    ax.scatter(positions[:,0],positions[:,1], color='darkblue', marker='o', s=50/np.sqrt(len(cg_atoms)), zorder=10)
+    ax.scatter(positions[:,0],positions[:,1], color='#00305d', marker='o', s=50*scaling_factor, zorder=10)
 
     for ii in range(natoms):
         neighbors = neigh_ids[ii]
@@ -112,15 +113,15 @@ def plot_cgatoms(cg_atoms, fig=None, ax=None,
                 ynew.append(y+disp_vec[1])
             if plot_beam:
                 ax.plot(xnew, ynew,
-                        color='lightsteelblue', linewidth=10/np.sqrt(len(cg_atoms)), zorder=-1)
+                        color='lightsteelblue', linewidth=6*scaling_factor, zorder=-1)
 
             if plot_neighbor_connections:
                 ax.plot([positions[ii][0], positions[ii][0] + v1_ii[0]],
                         [positions[ii][1], positions[ii][1] + v1_ii[1]], 
-                        color='blue', zorder=5, linewidth=3/np.sqrt(len(cg_atoms)))
+                        color='#00305d', zorder=5, linewidth=2*scaling_factor)
             if plot_linker_sites:
                 ax.arrow(positions[ii,0],positions[ii,1], v2_ii[0], v2_ii[1], 
-            color='darkred', head_width=1/np.sqrt(len(cg_atoms)), head_length=1/np.sqrt(len(cg_atoms)), lw=5/np.sqrt(len(cg_atoms)), zorder=10, alpha=0.8)
+            color='darkred', head_width=1*scaling_factor, head_length=1*scaling_factor, lw=5*scaling_factor, zorder=10, alpha=0.8)
 
     if plot_cell:  # simulation cell
         ax.plot([0., cell.array[0,0]], [0., cell.array[0,1]], color='grey')
