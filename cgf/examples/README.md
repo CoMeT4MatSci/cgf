@@ -1,0 +1,3 @@
+- [example 1](example1): Training a BAFF and MikadoRR model
+- [example 2](example2): Performing a in-plane cell relaxation of a SW-defect with BAFF and MikadoRR
+- [example 3](example3): Redecorating a CG structure with atomistic building blocks
