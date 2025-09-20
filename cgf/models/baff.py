@@ -18,7 +18,7 @@ class BAFFPotential(Calculator):
 
     """
 
-    implemented_properties = ['energy', 'free_energy', 'forces', 'stress']  # free_energy==energy (just added for numerical stress)
+    implemented_properties = ['energy', 'free_energy', 'forces', 'stress', 'energies']  # free_energy==energy (just added for numerical stress)
     default_parameters = {'Kbond': 1.0,
                           'Kangle': 1.0,
                           'r0': 1.0,
@@ -66,12 +66,13 @@ class BAFFPotential(Calculator):
         self.nl.update(self.atoms)
 
         forces = np.zeros((natoms, 3))
-        energy = 0.0
+        energies = np.zeros(natoms)
+
         # iterate over all atoms
         for ii in np.arange(natoms):
             neighbors, offsets = self.nl.get_neighbors(ii)
             if len(neighbors)!=3:
-                warnings.warn(f"Number of neighbors != 0:  {neighbors}")
+                warnings.warn(f"Number of neighbors != 3:  {neighbors}")
             cells = np.dot(offsets, cell)
             distance_vectors = positions[neighbors] + cells - positions[ii]
 
@@ -81,7 +82,7 @@ class BAFFPotential(Calculator):
                 r1 = np.linalg.norm(v1)
 
                 # bond stretching contribution to energy and forces
-                energy += 0.5 * Kbond * (r1 - r0)**2
+                energies[ii] += 0.5 * Kbond * (r1 - r0)**2
                 forces[ii,:] += 4 * Kbond * v1/r1 * (r1 - r0)
 
                 neighbors_jj, offsets_jj = self.nl.get_neighbors(neighbors[jj])
@@ -110,12 +111,13 @@ class BAFFPotential(Calculator):
                     cosT = np.dot(v1,v2)/(r1*r2)
 
                     # angle bending contribution to energy and forces
-                    energy += 0.5 * Kangle * (cosT - cosT0)**2
+                    energies[ii] += 0.5 * Kangle * (cosT - cosT0)**2
                     forces[ii,:] += 2 * Kangle * (cosT - cosT0) * (v1 + v2)/(r1*r2)
                     forces[ii,:] -= 2 * Kangle * (cosT - cosT0) * cosT * (v1/r1**2 + v2/r2**2)
 
-        self.results['energy'] = energy
-        self.results['free_energy'] = energy
+        self.results['energy'] = np.sum(energies)
+        self.results['energies'] = energies
+        self.results['free_energy'] = np.sum(energies)
         self.results['forces'] = forces
         if 'stress' in properties:
             self.results['stress'] = self.calculate_numerical_stress_2D(atoms)

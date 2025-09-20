@@ -110,3 +110,6 @@ def test_BAFFPotential_calc_SW(tmp_path):
 
     assert cg_atoms_o.get_potential_energy()==pytest.approx(12.883830010199036)
 
+    energies = cg_atoms.get_potential_energies()
+
+    assert np.sum(energies)==pytest.approx(12.883830010199036)
