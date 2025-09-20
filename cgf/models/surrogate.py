@@ -215,6 +215,52 @@ class MikadoRR(Calculator):
 
         return numeric_stress_2D(atoms, d=d, voigt=voigt)
 
+    def get_potential_energies(self, atoms=None):
+        """Returns potential energies per CG-site.
+        The beam contributions are split equally between
+        the connected beams.
+        The scaling parameter rr_incpt is added to each core multiplied
+        by the number of connections (currently hardcoded with n=3)
+
+        Returns:
+            np.array: array of CG-site energies
+        """
+        rr_coeff = self.parameters.rr_coeff
+        rr_incpt = self.parameters.rr_incpt
+
+        bonds = _get_bonds(self.atoms)
+
+        core_desc = _get_core_descriptors(self.atoms)
+        core_descriptors = np.array([core_desc,])
+        bond_desc, bond_params, bond_ref = _get_bond_descriptors(self.atoms, bonds)
+        bond_desc = np.array([bond_desc,])   
+        
+        lenghts = bond_desc[:,:,0].T
+        psi0 = bond_desc[:,:,1].T
+        psi1 = bond_desc[:,:,2].T
+
+        # cores
+        core_desc = np.array(core_descriptors)
+        dphi0 = (core_desc[:,:,0] - np.sign(core_desc[:,:,0])*2*np.pi/core_desc.shape[2]).T
+        dphi1 = (core_desc[:,:,1] - np.sign(core_desc[:,:,1])*2*np.pi/core_desc.shape[2]).T
+        dphi2 = (core_desc[:,:,2] - np.sign(core_desc[:,:,2])*2*np.pi/core_desc.shape[2]).T
+
+
+        energies = np.zeros(len(self.atoms))
+        for ii in range(len(self.atoms)):
+            energies[ii] += rr_coeff[-1] * (dphi0[ii]**2 + dphi1[ii]**2 + dphi2[ii]**2)[0]
+
+        for ib, b in enumerate(bonds):
+            ii = b[0]
+            jj = b[2]
+            energies[ii] += (rr_coeff[0] * lenghts[ib] + rr_coeff[1] * lenghts[ib]**2)[0]/2
+            energies[ii] += (rr_coeff[2] * psi0[ib]**2 + rr_coeff[3] * psi1[ib]**2 + rr_coeff[4] * psi0[ib]*psi1[ib])[0]/2
+            energies[jj] += (rr_coeff[0] * lenghts[ib] + rr_coeff[1] * lenghts[ib]**2)[0]/2
+            energies[jj] += (rr_coeff[2] * psi0[ib]**2 + rr_coeff[3] * psi1[ib]**2 + rr_coeff[4] * psi0[ib]*psi1[ib])[0]/2
+
+        energies += rr_incpt * 3  # add intercept to each site
+        return energies
+
 ###############################################################################
 
 def _renormalize_linker_lengths(atoms, p, p0):

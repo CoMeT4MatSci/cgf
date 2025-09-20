@@ -147,6 +147,11 @@ def test_MikadoRR_calc_SW(tmp_path):
     cg_atoms.calc = calculator
     assert cg_atoms.get_potential_energy()==pytest.approx(12.753976338633947)
 
+    energies = cg_atoms.get_potential_energies()
+    assert np.sum(energies)==pytest.approx(12.753976338633947)
+    assert len(energies)==len(cg_atoms)
+
+
     # SW optimization of linker_sites
 
     cg_atoms = read_cgatoms(Path(test_data_path/'COF-5_opt_SW_cg.json'))
@@ -154,6 +159,10 @@ def test_MikadoRR_calc_SW(tmp_path):
             4.45880373, 27.369685]), rr_incpt=2315.3320266790165/6, opt=True, update_linker_sites=True, **{'gtol': 1e-3})
     cg_atoms.calc = calculator
     assert cg_atoms.get_potential_energy()==pytest.approx(11.982403)
+
+    energies = cg_atoms.get_potential_energies()
+    assert np.sum(energies)==pytest.approx(11.982403)
+    assert len(energies)==len(cg_atoms)
 
     # SW optimization of sites
 
