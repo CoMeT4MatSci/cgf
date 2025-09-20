@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15075281.svg)](https://doi.org/10.5281/zenodo.15075281)
+
 # Coarse Grained Frameworks (cgf)
 
 cgf enables the coarse-graining of framework materials based on a Bond-Angle Force-Field (BAFF) or on elastic beams (MikadoRR).
