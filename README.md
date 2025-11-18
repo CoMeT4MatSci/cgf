@@ -21,3 +21,8 @@ As basis, we use the atomic simulation environment (ASE). The coarse-grained sys
 - `neighbor_distances`:  The distances to the respective neighbors of each core-site
 - `linker_sites`: Vectors which indicate position of attatched linkesr for each core-site
 - `linker_neighbors`: Provides a mapping which `linker_sites` are connected to which neighbors
+
+
+## References
+- Toward Coarse-Grained Elasticity of Single-Layer Covalent Organic Frameworks. Alexander Croy, Antonios Raptakis, David Bodesheim, Arezoo Dianat, Gianaurelio Cuniberti, *The Journal of Physical Chemistry C*, 2022, 126, 44, 18943-18951: https://doi.org/10.1021/acs.jpcc.2c06268
+- Elastic properties of defective 2D polymers from regression driven coarse-graining. David Bodesheim, Alexander Croy, Gianaurelio Cuniberti, *Journal of Chemical Theory and Computation*, 2025, 21, 21, 11210–11218: https://doi.org/10.1021/acs.jctc.5c01339
